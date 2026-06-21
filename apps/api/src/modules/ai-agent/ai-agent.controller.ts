@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, Post as HttpPost, Put } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { AiAgentService } from './ai-agent.service';
@@ -25,7 +25,7 @@ const UpdateStateSchema = z.object({
 export class AiAgentController {
   constructor(private readonly agent: AiAgentService) {}
 
-  @Post('chat')
+  @HttpPost('chat')
   @ApiOperation({ summary: 'Send a message to your personal AI assistant' })
   async chat(
     @CurrentUser('did') did: string,

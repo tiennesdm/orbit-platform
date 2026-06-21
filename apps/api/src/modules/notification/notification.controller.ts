@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post as HttpPost, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { NotificationService } from './notification.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -24,7 +24,7 @@ export class NotificationController {
     );
   }
 
-  @Post(':notificationId/read')
+  @HttpPost(':notificationId/read')
   @ApiOperation({ summary: 'Mark notification as read' })
   async markRead(
     @CurrentUser('did') did: string,
@@ -34,7 +34,7 @@ export class NotificationController {
     return { success: true };
   }
 
-  @Post('read-all')
+  @HttpPost('read-all')
   @ApiOperation({ summary: 'Mark all notifications as read' })
   async markAllRead(@CurrentUser('did') did: string): Promise<{ success: true }> {
     await this.notifications.markAllAsRead(did);

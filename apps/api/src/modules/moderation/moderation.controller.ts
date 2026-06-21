@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from '@nestjs/common';
+import { Body, Controller, Post as HttpPost } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { ModerationService } from './moderation.service';
@@ -17,7 +17,7 @@ const ReportSchema = z.object({
 export class ModerationController {
   constructor(private readonly moderation: ModerationService) {}
 
-  @Post('score')
+  @HttpPost('score')
   @ApiOperation({ summary: 'Score content (internal — for pre-publish hooks)' })
   async score(
     @CurrentUser('did') did: string,
@@ -26,7 +26,7 @@ export class ModerationController {
     return this.moderation.scoreContent({ ...body, userId: did });
   }
 
-  @Post('report')
+  @HttpPost('report')
   @ApiOperation({ summary: 'Report content or user' })
   async report(
     @CurrentUser('did') did: string,

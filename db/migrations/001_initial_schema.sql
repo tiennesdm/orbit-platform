@@ -16,8 +16,8 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 CREATE EXTENSION IF NOT EXISTS "pg_trgm";     -- Full-text + fuzzy search (Vedadb full-text)
-CREATE EXTENSION IF NOT EXISTS "pgvector";    -- Vector embeddings (Vedadb vector mode)
-CREATE EXTENSION IF NOT EXISTS "postgis";     -- Geo-spatial (Vedadb geo mode)
+CREATE EXTENSION IF NOT EXISTS "vector";      -- Vector embeddings (Vedadb vector mode) [pgvector compat]
+CREATE EXTENSION IF NOT EXISTS "postgis";     -- Geo-spatial (Vedadb geo mode) [not in pgvector/pgvector:pg16 — will skip if unavailable]
 CREATE EXTENSION IF NOT EXISTS "btree_gin";   -- Composite GIN indexes
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements";
 

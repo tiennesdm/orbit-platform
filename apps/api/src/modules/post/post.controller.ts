@@ -27,7 +27,7 @@ const UpdatePostSchema = z.object({
 export class PostController {
   constructor(private readonly posts: PostService) {}
 
-  @Post()
+  @HttpPost()
   @ApiOperation({ summary: 'Create a new post (4 modes supported)' })
   async create(
     @CurrentUser('did') did: string,

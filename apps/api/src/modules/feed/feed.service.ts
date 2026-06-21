@@ -138,7 +138,7 @@ export class FeedService {
     const posts = feed.slice(0, limit);
     const nextCursor = hasMore ? posts[posts.length - 1]?.createdAt : undefined;
 
-    const response: FeedResponse = { posts, hasMore, nextCursor };
+    const response: FeedResponse = { algorithm, posts, hasMore, nextCursor };
 
     // Cache for 30 seconds
     await this.cache.set(cacheKey, response, { ttlSeconds: 30 });

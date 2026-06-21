@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post as HttpPost, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { GroupService } from './group.service';
@@ -48,7 +48,7 @@ export class GroupController {
     return group;
   }
 
-  @Post()
+  @HttpPost()
   @ApiOperation({ summary: 'Create a new group' })
   async create(
     @CurrentUser('did') did: string,
@@ -57,7 +57,7 @@ export class GroupController {
     return this.groups.createGroup(did, body);
   }
 
-  @Post(':groupId/join')
+  @HttpPost(':groupId/join')
   @ApiOperation({ summary: 'Join a group' })
   async join(
     @CurrentUser('did') did: string,
@@ -75,7 +75,7 @@ export class GroupController {
     return this.groups.listGroupEvents(groupId, upcoming !== 'false');
   }
 
-  @Post(':groupId/events')
+  @HttpPost(':groupId/events')
   @ApiOperation({ summary: 'Create an event in a group' })
   async createEvent(
     @CurrentUser('did') did: string,

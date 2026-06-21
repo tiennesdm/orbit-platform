@@ -52,10 +52,10 @@
     @apply text-2xs font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-xs inline-flex items-center gap-1;
   }
 
-  .mode-pill.intimate { @apply bg-amber-50 text-orange-700; }
-  .mode-pill.public { @apply bg-blue-50 text-blue-800; }
-  .mode-pill.visual { @apply bg-pink-50 text-pink-800; }
-  .mode-pill.community { @apply bg-sky-50 text-sky-800; }
+  .mode-pill.intimate { background-color: #FEF3C7; color: #C2410C; }
+  .mode-pill.public { background-color: #EFF6FF; color: #1E40AF; }
+  .mode-pill.visual { background-color: #FDF2F8; color: #9D174D; }
+  .mode-pill.community { background-color: #F0F9FF; color: #075985; }
 
   /* Avatar gradients */
   .avatar-1 { background: linear-gradient(135deg, #F472B6 0%, #FB923C 100%); }

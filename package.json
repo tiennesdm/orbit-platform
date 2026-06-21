@@ -22,6 +22,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "esbuild-register": "^3.6.0",
     "prettier": "^3.2.0",
     "turbo": "^1.13.0",
     "typescript": "^5.4.0"

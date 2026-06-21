@@ -6,7 +6,7 @@ import type { SearchResponse } from '@orbit/types';
 @ApiTags('search')
 @Controller('search')
 export class SearchController {
-  constructor(private readonly search: SearchService) {}
+  constructor(private readonly svc: SearchService) {}
 
   @Get()
   @ApiOperation({ summary: 'Universal search (users, posts, reels, groups, listings, hashtags)' })
@@ -16,7 +16,7 @@ export class SearchController {
     @Query('limit') limit?: string,
     @Query('mode') mode?: 'public' | 'visual' | 'intimate' | 'community'
   ): Promise<SearchResponse> {
-    return this.search.search({
+    return this.svc.search({
       q,
       type,
       limit: limit ? parseInt(limit, 10) : undefined,

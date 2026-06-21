@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post as HttpPost, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { MarketplaceService } from './marketplace.service';
@@ -24,7 +24,7 @@ const CreateListingSchema = z.object({
 export class MarketplaceController {
   constructor(private readonly marketplace: MarketplaceService) {}
 
-  @Post()
+  @HttpPost()
   @ApiOperation({ summary: 'Create a marketplace listing' })
   async create(
     @CurrentUser('did') did: string,

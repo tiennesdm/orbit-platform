@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post as HttpPost } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { StoryService } from './story.service';
@@ -26,7 +26,7 @@ export class StoryController {
     return this.stories.getStoriesForUser(did);
   }
 
-  @Post()
+  @HttpPost()
   @ApiOperation({ summary: 'Create a new story' })
   async create(
     @CurrentUser('did') did: string,
@@ -35,7 +35,7 @@ export class StoryController {
     return this.stories.create(did, body);
   }
 
-  @Post(':authorId/:storyId/view')
+  @HttpPost(':authorId/:storyId/view')
   @ApiOperation({ summary: 'Mark a story as viewed' })
   async markViewed(
     @CurrentUser('did') did: string,

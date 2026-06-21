@@ -5,7 +5,7 @@
  * - Portable identity export
  */
 
-import { Body, Controller, Get, Post, Put, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post as HttpPost, Put, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { z } from 'zod';
 import { IdentityService } from './identity.service';
@@ -47,14 +47,14 @@ export class IdentityController {
   // WebAuthn Registration (Public)
   // ============================================================
   @Public()
-  @Post('register/options')
+  @HttpPost('register/options')
   @ApiOperation({ summary: 'Generate WebAuthn registration options' })
   async registerOptions(@Body() body: { handle?: string; displayName: string }) {
     return this.webauthn.generateRegistrationOptions(body);
   }
 
   @Public()
-  @Post('register/verify')
+  @HttpPost('register/verify')
   @ApiOperation({ summary: 'Verify WebAuthn registration and create account' })
   async registerVerify(@Body() body: { challengeId: string; credential: WebAuthnRegistrationCredential }) {
     const parsed = RegisterInputSchema.partial().parse({ displayName: '' });
@@ -65,14 +65,14 @@ export class IdentityController {
   // WebAuthn Login (Public)
   // ============================================================
   @Public()
-  @Post('login/options')
+  @HttpPost('login/options')
   @ApiOperation({ summary: 'Generate WebAuthn authentication options' })
   async loginOptions(@Body() body: { handle: string }) {
     return this.webauthn.generateAuthenticationOptions(body.handle);
   }
 
   @Public()
-  @Post('login/verify')
+  @HttpPost('login/verify')
   @ApiOperation({ summary: 'Verify WebAuthn authentication, return session' })
   async loginVerify(@Body() body: { challengeId: string; credential: any }) {
     return this.webauthn.verifyAuthentication(body);
@@ -82,7 +82,7 @@ export class IdentityController {
   // Standard signup (for tests/dev — production uses WebAuthn)
   // ============================================================
   @Public()
-  @Post('signup')
+  @HttpPost('signup')
   @ApiOperation({ summary: 'Direct signup (no WebAuthn) — for testing only' })
   async signup(@Body() body: z.infer<typeof RegisterInputSchema>): Promise<AuthSession> {
     return this.identity.register(body);
@@ -92,7 +92,7 @@ export class IdentityController {
   // Token refresh
   // ============================================================
   @Public()
-  @Post('refresh')
+  @HttpPost('refresh')
   @ApiOperation({ summary: 'Refresh access token using refresh token' })
   async refresh(@Body() body: { refreshToken: string }): Promise<AuthSession> {
     return this.identity.refreshAccessToken(body.refreshToken);
@@ -134,5 +134,25 @@ export class IdentityController {
     const user = await this.identity.findByHandle(handle.replace(/^@/, ''));
     if (!user) throw new Error('User not found');
     return user;
+  }
+
+  @HttpPost(':handle/follow')
+  @ApiOperation({ summary: 'Follow a user by handle' })
+  @HttpCode(HttpStatus.OK)
+  async follow(@CurrentUser('did') did: string, @Param('handle') handle: string) {
+    const target = await this.identity.findByHandle(handle.replace(/^@/, ''));
+    if (!target) throw new Error('User not found');
+    await this.identity.follow(did, target.did);
+    return { ok: true, followeeDid: target.did };
+  }
+
+  @Delete(':handle/follow')
+  @ApiOperation({ summary: 'Unfollow a user by handle' })
+  @HttpCode(HttpStatus.OK)
+  async unfollow(@CurrentUser('did') did: string, @Param('handle') handle: string) {
+    const target = await this.identity.findByHandle(handle.replace(/^@/, ''));
+    if (!target) throw new Error('User not found');
+    await this.identity.unfollow(did, target.did);
+    return { ok: true, followeeDid: target.did };
   }
 }

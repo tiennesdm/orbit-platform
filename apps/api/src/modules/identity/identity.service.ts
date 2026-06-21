@@ -73,7 +73,7 @@ export class IdentityService {
         base64.encode(identityKeyPair.publicKey),
         base64.encode(x25519KeyPair.publicKey),
         base64.encode(x25519KeyPair.privateKey), // signed pre-key (simplified)
-        JSON.stringify([]),
+        '{}',  // empty Postgres BYTEA[] array literal
         pdsEndpoint,
         JSON.stringify({ version: 'orbit-v1', registration: 'webauthn' }),
       ]
@@ -201,6 +201,50 @@ export class IdentityService {
     const signatureBytes = base64.decode(signature);
 
     return verifyEd25519(signatureBytes, new TextEncoder().encode(challenge), publicKey);
+  }
+
+  /** Follow another user. Idempotent. */
+  async follow(followerDid: string, followeeDid: string): Promise<void> {
+    if (followerDid === followeeDid) throw new Error('Cannot follow yourself');
+    await this.db.query(
+      `INSERT INTO follows (follower_id, followee_id, notify_level, is_close_friend)
+       VALUES ($1, $2, 0, false)
+       ON CONFLICT (follower_id, followee_id) DO NOTHING`,
+      [followerDid, followeeDid]
+    );
+    // Notify followee (best-effort)
+    await this.db.query(
+      `INSERT INTO notifications (recipient_did, type, actor_did, text, priority_score)
+       VALUES ($1, 'follow', $2, $3, 0.5)
+       ON CONFLICT DO NOTHING`,
+      [followeeDid, followerDid, `${followerDid} started following you`]
+    ).catch(() => { /* notification best-effort */ });
+  }
+
+  /** Unfollow a user. Idempotent. */
+  async unfollow(followerDid: string, followeeDid: string): Promise<void> {
+    await this.db.query(
+      `DELETE FROM follows WHERE follower_id = $1 AND followee_id = $2`,
+      [followerDid, followeeDid]
+    );
+  }
+
+  /** List users that `did` follows. */
+  async listFollowing(did: string, limit = 50): Promise<string[]> {
+    const res = await this.db.query<{ followee_id: string }>(
+      `SELECT followee_id FROM follows WHERE follower_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [did, limit]
+    );
+    return res.rows.map((r) => r.followee_id);
+  }
+
+  /** List followers of `did`. */
+  async listFollowers(did: string, limit = 50): Promise<string[]> {
+    const res = await this.db.query<{ follower_id: string }>(
+      `SELECT follower_id FROM follows WHERE followee_id = $1 ORDER BY created_at DESC LIMIT $2`,
+      [did, limit]
+    );
+    return res.rows.map((r) => r.follower_id);
   }
 }
 

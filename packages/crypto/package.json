@@ -11,14 +11,16 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@noble/ciphers": "^2.2.0",
+    "@noble/curves": "^1.9.7",
     "@noble/ed25519": "^2.1.0",
-    "@noble/hashes": "^1.4.0",
-    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.8.0",
     "libsodium-wrappers": "^0.7.13"
   },
   "devDependencies": {
     "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"
   }

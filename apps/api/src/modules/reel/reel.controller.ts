@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post as HttpPost, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { ReelService } from './reel.service';
@@ -29,7 +29,7 @@ export class ReelController {
     return this.reels.getForYouFeed(did, cursor, limit ? parseInt(limit, 10) : undefined);
   }
 
-  @Post()
+  @HttpPost()
   @ApiOperation({ summary: 'Create a new reel' })
   async create(
     @CurrentUser('did') did: string,
@@ -38,7 +38,7 @@ export class ReelController {
     return this.reels.create(did, body);
   }
 
-  @Post(':authorId/:reelId/view')
+  @HttpPost(':authorId/:reelId/view')
   @ApiOperation({ summary: 'Increment reel view count' })
   async view(
     @Param('authorId') authorId: string,
@@ -48,7 +48,7 @@ export class ReelController {
     return { success: true };
   }
 
-  @Post(':authorId/:reelId/like')
+  @HttpPost(':authorId/:reelId/like')
   @ApiOperation({ summary: 'Like a reel' })
   async like(
     @CurrentUser('did') did: string,
@@ -59,5 +59,3 @@ export class ReelController {
     return { success: true };
   }
 }
-
-import { Param } from '@nestjs/common';

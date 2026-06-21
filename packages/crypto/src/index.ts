@@ -8,7 +8,7 @@
  */
 
 import { ed25519 } from '@noble/curves/ed25519';
-import { x25519 } from '@noble/curves/x25519';
+import { x25519 } from '@noble/curves/ed25519';
 import { sha256 } from '@noble/hashes/sha256';
 import { sha512 } from '@noble/hashes/sha512';
 import sodium from 'libsodium-wrappers';
@@ -161,7 +161,20 @@ async function hkdf(
   length: number = 32
 ): Promise<Uint8Array> {
   await ensureSodium();
-  return sodium.crypto_kdf_derive_from_key(length, base64url.encode(salt), new TextDecoder().decode(info) + base64url.encode(ikm));
+  // libsodium crypto_kdf_derive_from_key signature:
+  //   (subkey_length: number, subkey_id: number, ctx: string, key: Uint8Array)
+  // subkey_id must be an unsigned integer or bigint (NOT a string — old code passed base64 string).
+  // ctx must be <= 8 chars. info bytes → ASCII context, ikm truncated to 32 bytes is the master key.
+  const ctx = (new TextDecoder().decode(info) + base64url.encode(ikm)).slice(0, 8);
+  // Encode salt as a numeric subkey_id (first 4 bytes as uint32, fallback to 0).
+  // With the current callers, salt is always a zero Uint8Array(32) so subkey_id is 0;
+  // distinct masters (different ikm per derivation) already yield distinct subkeys.
+  let subkeyId = 0;
+  for (let i = 0; i < Math.min(salt.length, 4); i++) {
+    subkeyId |= salt[i] << (i * 8);
+  }
+  subkeyId = subkeyId >>> 0; // coerce to unsigned 32-bit
+  return sodium.crypto_kdf_derive_from_key(length, subkeyId, ctx, ikm.slice(0, 32));
 }
 
 function hmacSha256(key: Uint8Array, data: Uint8Array): Uint8Array {
@@ -277,7 +290,7 @@ export async function decryptMessage(
   state.recvChainKey = nextChainKey;
   state.recvCounter++;
 
-  return sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, body, nonce, messageKey);
+  return new Uint8Array(sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, body, null, nonce, messageKey));
 }
 
 // ============================================================
@@ -302,7 +315,7 @@ export async function decryptAtRest(encrypted: string, key: Uint8Array): Promise
   const nonceLength = sodium.crypto_aead_xchacha20poly1305_ietf_NPUBBYTES;
   const nonce = bytes.slice(0, nonceLength);
   const body = bytes.slice(nonceLength);
-  const plaintext = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, body, nonce, key);
+  const plaintext = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, body, null, nonce, key);
   return new TextDecoder().decode(plaintext);
 }
 

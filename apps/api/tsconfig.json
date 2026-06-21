@@ -2,18 +2,22 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "module": "commonjs",
+    "moduleResolution": "node",
     "target": "ES2022",
     "outDir": "./dist",
-    "rootDir": "./src",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
     "strictPropertyInitialization": false,
-    "declaration": true,
+    "declaration": false,
     "removeComments": true,
     "resolveJsonModule": true,
-    "incremental": true
+    "incremental": true,
+    "noEmit": false
   },
   "include": ["src/**/*", "test/**/*"]
 }

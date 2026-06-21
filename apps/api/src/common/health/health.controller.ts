@@ -1,11 +1,13 @@
 import { Controller, Get } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, HealthIndicatorResult } from '@nestjs/terminus';
 import { getVedadbPool } from '@orbit/db';
+import { Public } from '../decorators/public.decorator';
 
 @Controller('health')
 export class HealthController {
   constructor(private readonly health: HealthCheckService) {}
 
+  @Public()
   @Get()
   @HealthCheck()
   async check() {
@@ -38,11 +40,13 @@ export class HealthController {
     return { [key]: { status: 'up' } };
   }
 
+  @Public()
   @Get('ready')
   ready() {
     return { status: 'ready', timestamp: new Date().toISOString() };
   }
 
+  @Public()
   @Get('live')
   live() {
     return { status: 'live', timestamp: new Date().toISOString() };
