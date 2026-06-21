@@ -1,0 +1,102 @@
+version: '3.9'
+
+# Local development stack for ORBIT
+# Production target: single Vedadb cluster + S3 + CloudFront + AWS GPU pool
+# This docker-compose uses Postgres + extensions as Vedadb-compatible dev adapter.
+# Vedadb speaks PostgreSQL wire protocol + extensions, so this works seamlessly.
+
+services:
+  # ----------------------------------------------------------
+  # Vedadb (Postgres-compatible adapter for local dev)
+  # In production: replace with actual Vedadb cluster
+  # ----------------------------------------------------------
+  vedadb:
+    image: postgis/pgvector:latest   # Postgres 16 + PostGIS + pgvector
+    container_name: orbit-vedadb
+    environment:
+      POSTGRES_USER: orbit
+      POSTGRES_PASSWORD: orbit_dev_password
+      POSTGRES_DB: orbit
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    ports:
+      - "5432:5432"
+    volumes:
+      - vedadb-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+    command: >
+      postgres
+        -c shared_preload_libraries=pg_stat_statements
+        -c max_connections=200
+        -c shared_buffers=2GB
+        -c effective_cache_size=6GB
+        -c work_mem=64MB
+        -c maintenance_work_mem=512MB
+        -c random_page_cost=1.1
+        -c log_min_duration_statement=200ms
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orbit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ----------------------------------------------------------
+  # Vedadb admin (optional, for browsing data)
+  # ----------------------------------------------------------
+  vedadb-admin:
+    image: dpage/pgadmin4:latest
+    container_name: orbit-vedadb-admin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@orbit.dev
+      PGADMIN_DEFAULT_PASSWORD: orbit_admin
+      PGADMIN_LISTEN_PORT: 5050
+    ports:
+      - "5050:80"
+    depends_on:
+      - vedadb
+    profiles: ["tools"]
+
+  # ----------------------------------------------------------
+  # Redis (legacy support — only for legacy migrations)
+  # NOT used in production ORBIT (Vedadb hot tier handles cache)
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: orbit-redis
+    ports:
+      - "6379:6379"
+    profiles: ["legacy"]
+
+  # ----------------------------------------------------------
+  # LocalStack (S3 mock for media storage local dev)
+  # ----------------------------------------------------------
+  localstack:
+    image: localstack/localstack:3
+    container_name: orbit-localstack
+    environment:
+      SERVICES: s3
+      DEBUG: 0
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack-data:/var/lib/localstack
+
+  # ----------------------------------------------------------
+  # Elasticsearch (legacy support — only for migration testing)
+  # NOT used in production ORBIT (Vedadb handles full-text + vector)
+  # ----------------------------------------------------------
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: orbit-elasticsearch
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: false
+      ES_JAVA_OPTS: "-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    profiles: ["legacy"]
+
+volumes:
+  vedadb-data:
+  localstack-data:

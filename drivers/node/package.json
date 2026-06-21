@@ -1,0 +1,33 @@
+{
+  "name": "@orbit/vedadb-driver",
+  "version": "0.1.0",
+  "description": "Vedadb-native Node.js driver for ORBIT — sharding hints, hot-tier cache, hybrid search, pub/sub",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "vedadb",
+    "database",
+    "driver",
+    "orbit",
+    "sql",
+    "vector"
+  ],
+  "license": "UNLICENSED",
+  "dependencies": {
+    "pg": "^8.11.5",
+    "pg-cursor": "^2.10.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/pg": "^8.11.5",
+    "@types/pg-cursor": "^2.10.3",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

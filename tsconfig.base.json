@@ -1,0 +1,36 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "baseUrl": ".",
+    "paths": {
+      "@orbit/types": ["./packages/types/src"],
+      "@orbit/types/*": ["./packages/types/src/*"],
+      "@orbit/crypto": ["./packages/crypto/src"],
+      "@orbit/crypto/*": ["./packages/crypto/src/*"],
+      "@orbit/db": ["./packages/db/src"],
+      "@orbit/db/*": ["./packages/db/src/*"],
+      "@orbit/utils": ["./packages/utils/src"],
+      "@orbit/utils/*": ["./packages/utils/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist", ".next", ".turbo"]
+}

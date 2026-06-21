@@ -1,0 +1,34 @@
+{
+  "name": "orbit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ORBIT — AI-native, anti-addiction, portable-identity social platform. Single-engine architecture on Vedadb.",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:migrate": "bash scripts/migrate.sh",
+    "db:seed": "bash scripts/seed.sh",
+    "db:reset": "bash scripts/reset.sh",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "turbo run clean && rm -rf node_modules"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "prettier": "^3.2.0",
+    "turbo": "^1.13.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=8.0.0"
+  },
+  "packageManager": "pnpm@8.15.0"
+}
