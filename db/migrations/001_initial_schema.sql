@@ -97,7 +97,7 @@ CREATE TABLE posts (
   parent_id        BIGINT,                                  -- reply/quote parent
   root_id          BIGINT,                                  -- root of thread (for replies)
   content_text     TEXT,
-  media_ids        BIGINT[] DEFAULT '{}',
+  media_ids        TEXT[] DEFAULT '{}',
   media_count      SMALLINT DEFAULT 0,
   hashtags         TEXT[] DEFAULT '{}',
   mentions         TEXT[] DEFAULT '{}',                     -- user DIDs
@@ -220,7 +220,7 @@ CREATE INDEX idx_messages_thread_created ON messages USING btree (thread_id, cre
 CREATE TABLE stories (
   story_id            BIGSERIAL,
   author_id           TEXT NOT NULL REFERENCES users(did) ON DELETE CASCADE,
-  media_id            BIGINT NOT NULL,
+  media_id            TEXT NOT NULL,
   text_overlay        TEXT,
   background_color    TEXT,                                   -- hex or gradient
   visibility          SMALLINT NOT NULL DEFAULT 0,            -- 0=public, 1=close_friends, 2=custom
@@ -243,9 +243,9 @@ CREATE INDEX idx_stories_created ON stories USING btree (created_at DESC);
 CREATE TABLE reels (
   reel_id            BIGSERIAL,
   author_id          TEXT NOT NULL REFERENCES users(did) ON DELETE CASCADE,
-  media_id           BIGINT NOT NULL,
+  media_id           TEXT NOT NULL,
   caption            TEXT,
-  audio_track_id     BIGINT,
+  audio_track_id     TEXT,
   audio_start_ms     INT,
   hashtags           TEXT[] DEFAULT '{}',
   duration_ms        INT NOT NULL,
@@ -338,7 +338,7 @@ CREATE TABLE marketplace_listings (
   description       TEXT,
   price_cents       BIGINT NOT NULL,
   currency          TEXT DEFAULT 'INR',
-  media_ids         BIGINT[] DEFAULT '{}',
+  media_ids         TEXT[] DEFAULT '{}',
   category          TEXT,
   item_condition    condition_type,
   location_label    TEXT,
@@ -382,7 +382,7 @@ CREATE INDEX idx_notif_target ON notifications USING btree (target_type, target_
 CREATE TABLE ai_agent_state (
   user_id            TEXT PRIMARY KEY REFERENCES users(did) ON DELETE CASCADE,
   personality        TEXT DEFAULT 'helpful',
-  autonomy_level     SMALLINT DEFAULT 1,                     -- 0=ask, 1=suggest, 2=auto
+  autonomy_level     TEXT DEFAULT 'suggest',                     -- 0=ask, 1=suggest, 2=auto
   enabled_features   JSONB DEFAULT '{}',                    -- {feature: bool}
   long_term_memory   JSONB DEFAULT '{}',                    -- facts, preferences, relationships
   episodic_memory    JSONB DEFAULT '{}',                    -- selective event memories
