@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4338CA"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+  <circle cx="512" cy="512" r="320" fill="#FAF8F4" opacity="0.95"/>
+  <circle cx="512" cy="512" r="180" fill="none" stroke="#4338CA" stroke-width="40"/>
+  <circle cx="512" cy="512" r="80" fill="#4338CA"/>
+  <text x="512" y="780" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, sans-serif" font-size="120" font-weight="800" fill="#FAF8F4">ORBIT</text>
+</svg>
