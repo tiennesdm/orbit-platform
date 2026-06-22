@@ -26,6 +26,13 @@ import { ModerationModule } from './modules/moderation/moderation.module';
 import { MediaModule } from './modules/media/media.module';
 import { GdprModule } from './modules/gdpr/gdpr.module';
 import { EmailModule } from './modules/email/email.module';
+import { VoiceModule } from './modules/voice/voice.module';
+import { MonetizationModule } from './modules/monetization/monetization.module';
+import { CustomFeedsModule } from './modules/custom-feeds/custom-feeds.module';
+import { FederationModule } from './modules/federation/federation.module';
+import { WellnessModule } from './modules/wellness/wellness.module';
+import { RemixModule } from './modules/remix/remix.module';
+import { AiCocreationModule } from './modules/ai-cocreation/ai-cocreation.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
@@ -94,6 +101,13 @@ import { ObservabilityModule } from './common/observability/observability.module
     MediaModule,
     GdprModule,
     EmailModule,
+    VoiceModule,
+    MonetizationModule,
+    CustomFeedsModule,
+    FederationModule,
+    WellnessModule,
+    RemixModule,
+    AiCocreationModule,
   ],
   controllers: [HealthController],
   providers: [
