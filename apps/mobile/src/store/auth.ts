@@ -3,10 +3,21 @@
  */
 
 import { create } from 'zustand';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 import { api, AuthSession } from '@/lib/api';
 
 const TOKEN_KEY = 'orbit.auth.token';
+const isWeb = Platform.OS === 'web';
+
+const getToken = async (): Promise<string | null> => {
+  if (isWeb) {
+    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  }
+  try {
+    const SecureStore = await import('expo-secure-store');
+    return SecureStore.getItemAsync(TOKEN_KEY);
+  } catch { return null; }
+};
 
 interface AuthState {
   isHydrated: boolean;
@@ -17,15 +28,25 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
-export const useAuth = create<AuthState>((set) => ({
+export const useAuth = create<AuthState>((set, get) => ({
   isHydrated: false,
   user: null,
   token: null,
 
   async hydrate() {
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
-    const user = await api.getCurrentUser();
-    set({ isHydrated: true, token, user });
+    // Idempotent — don't re-hydrate if already done
+    if (get().isHydrated) return;
+    try {
+      // CRITICAL: load the in-memory token from SecureStore / localStorage first
+      // so subsequent api.* calls are authenticated.
+      await api.init();
+      const token = await getToken();
+      const user = await api.getCurrentUser();
+      set({ isHydrated: true, token: token ?? api.token ?? null, user });
+    } catch (e) {
+      // Network error or no token — treat as logged out, but mark hydrated
+      set({ isHydrated: true, token: null, user: null });
+    }
   },
 
   async signup(handle, displayName, password) {

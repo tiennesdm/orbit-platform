@@ -9,9 +9,35 @@ import { Platform } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
 
+// Web fallback: expo-secure-store uses native modules that don't exist on web
+const isWeb = Platform.OS === 'web';
+async function getItemAsync(key: string): Promise<string | null> {
+  if (isWeb) {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+  return SecureStore.getItemAsync(key);
+}
+async function setItemAsync(key: string, value: string): Promise<void> {
+  if (isWeb) {
+    try { localStorage.setItem(key, value); } catch {}
+    return;
+  }
+  await SecureStore.setItemAsync(key, value);
+}
+async function deleteItemAsync(key: string): Promise<void> {
+  if (isWeb) {
+    try { localStorage.removeItem(key); } catch {}
+    return;
+  }
+  await SecureStore.deleteItemAsync(key);
+}
+
 const API_BASE =
   Constants.expoConfig?.extra?.apiUrl ??
-  (Platform.OS === 'android' ? 'http://10.0.2.2:4000/api/v1' : 'http://127.0.0.1:4000/api/v1');
+  // Default to IPv4 literal (127.0.0.1) — `localhost` resolves to ::1 (IPv6) first
+  // on macOS, and our server binds 0.0.0.0 (IPv4 only), causing ECONNREFUSED with
+  // no IPv4 fallback. MUST use 127.0.0.1 literal for service-to-localhost URLs.
+  (Platform.OS === 'android' ? 'http://10.0.2.2:4001/api/v1' : 'http://127.0.0.1:4001/api/v1');
 
 const TOKEN_KEY = 'orbit.auth.token';
 const REFRESH_KEY = 'orbit.auth.refresh';
@@ -35,32 +61,33 @@ export class OrbitApi {
   private token: string | null = null;
 
   async init() {
-    this.token = await SecureStore.getItemAsync(TOKEN_KEY);
+    if (this.token) return; // already loaded
+    this.token = await getItemAsync(TOKEN_KEY);
   }
 
   private async setToken(token: string | null) {
     this.token = token;
     if (token) {
-      await SecureStore.setItemAsync(TOKEN_KEY, token);
+      await setItemAsync(TOKEN_KEY, token);
     } else {
-      await SecureStore.deleteItemAsync(TOKEN_KEY);
+      await deleteItemAsync(TOKEN_KEY);
     }
   }
 
   async setSession(session: AuthSession) {
     await this.setToken(session.accessToken);
-    await SecureStore.setItemAsync(REFRESH_KEY, session.refreshToken);
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify({ did: session.did, handle: session.handle }));
+    await setItemAsync(REFRESH_KEY, session.refreshToken);
+    await setItemAsync(USER_KEY, JSON.stringify({ did: session.did, handle: session.handle }));
   }
 
   async clearSession() {
     await this.setToken(null);
-    await SecureStore.deleteItemAsync(REFRESH_KEY);
-    await SecureStore.deleteItemAsync(USER_KEY);
+    await deleteItemAsync(REFRESH_KEY);
+    await deleteItemAsync(USER_KEY);
   }
 
   async getCurrentUser(): Promise<{ did: string; handle: string } | null> {
-    const raw = await SecureStore.getItemAsync(USER_KEY);
+    const raw = await getItemAsync(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   }
 
@@ -204,6 +231,126 @@ export class OrbitApi {
 
   // === Hashtag ===
   getTag(name: string) { return this.request('GET', `/tag/${name}`); }
+
+  // === Voice rooms (P0) ===
+  listVoiceRooms() { return this.request('GET', '/voice/rooms'); }
+  createVoiceRoom(input: { title: string; mode: string; isPublic?: boolean }) {
+    return this.request('POST', '/voice/rooms', input);
+  }
+  getVoiceRoom(id: string) { return this.request('GET', `/voice/rooms/${id}`); }
+  joinVoiceRoom(id: string) { return this.request('POST', `/voice/rooms/${id}/join`); }
+  leaveVoiceRoom(id: string) { return this.request('POST', `/voice/rooms/${id}/leave`); }
+  sendVoiceSignal(id: string, signal: any) {
+    return this.request('POST', `/voice/rooms/${id}/signal`, signal);
+  }
+  toggleHandRaise(id: string) { return this.request('POST', `/voice/rooms/${id}/hand`); }
+
+  // === Monetization (P0) ===
+  sendTip(toHandle: string, amountCents: number, message?: string) {
+    return this.request('POST', '/monetization/tips', { toHandle, amountCents, message });
+  }
+  listTiers(handle: string) { return this.request('GET', `/monetization/tiers/${handle}`); }
+  createTier(input: { name: string; priceCents: number; perks?: string[]; description?: string }) {
+    return this.request('POST', '/monetization/tiers', input);
+  }
+  subscribe(handle: string, tierId: string) {
+    return this.request('POST', '/monetization/subscribe', { handle, tierId });
+  }
+  // NOTE: backend route is /monetization/creators/:handle/earnings — needs handle
+  getCreatorEarnings(handle: string = 'me') { return this.request('GET', `/monetization/creators/${handle}/earnings`); }
+  getCreatorTiers(handle: string) { return this.request('GET', `/monetization/creators/${handle}/tiers`); }
+  getMySubscriptions() { return this.request('GET', '/monetization/me/subscriptions'); }
+  getSubscriptionStatus(handle: string) {
+    return this.request('GET', `/monetization/subscriptions/${handle}`);
+  }
+
+  // === Custom feeds (P0) ===
+  listCustomFeeds() { return this.request('GET', '/feeds/custom'); }
+  createCustomFeed(input: { name: string; emoji?: string; rules: any[] }) {
+    return this.request('POST', '/feeds/custom', input);
+  }
+  getCustomFeed(id: string) { return this.request('GET', `/feeds/custom/${id}`); }
+  updateCustomFeed(id: string, input: any) {
+    return this.request('PUT', `/feeds/custom/${id}`, input);
+  }
+  deleteCustomFeed(id: string) { return this.request('DELETE', `/feeds/custom/${id}`); }
+  previewCustomFeed(rules: any[]) {
+    return this.request('POST', '/feeds/custom/preview', { rules });
+  }
+
+  // === Federation (P0) ===
+  verifyDomain(domain: string) {
+    return this.request('POST', '/federation/verify-domain', { domain });
+  }
+  resolveHandleAtProtocol(handle: string) {
+    return this.request('GET', `/federation/at-resolve?handle=${encodeURIComponent(handle)}`);
+  }
+  linkDomain(domain: string) {
+    return this.request('POST', '/federation/link-domain', { domain });
+  }
+  getFederationStatus() { return this.request('GET', '/federation/status'); }
+
+  // === Wellness (P0) ===
+  getWellnessStats() { return this.request('GET', '/wellness/stats'); }
+  getWellnessSettings() { return this.request('GET', '/wellness/settings'); }
+  updateWellnessSettings(settings: any) {
+    return this.request('PUT', '/wellness/settings', settings);
+  }
+  getParentalControls() { return this.request('GET', '/wellness/parental'); }
+  updateParentalControls(settings: any) {
+    return this.request('PUT', '/wellness/parental', settings);
+  }
+  logWellnessEvent(event: { eventType: string; durationSec?: number; metadata?: any }) {
+    return this.request('POST', '/wellness/events', event);
+  }
+
+  // === Remix (P0) ===
+  createRemix(input: { rootPostId: string; mode: string; contentText: string; remixType: string }) {
+    return this.request('POST', '/remix/create', input);
+  }
+  listRemixes(rootPostId: string) { return this.request('GET', `/remix/${rootPostId}/remixes`); }
+  getRemixTree(rootPostId: string) { return this.request('GET', `/remix/${rootPostId}/tree`); }
+
+  // === AI Co-Creation (P0) ===
+  generateAICaption(input: { mode: string; topic?: string; tone?: string; keywords?: string[] }) {
+    return this.request('POST', '/ai-cocreate/caption', input);
+  }
+  generateAILongText(input: { topic: string; tone?: string; length?: number; keywords?: string[] }) {
+    return this.request('POST', '/ai-cocreate/longtext', input);
+  }
+  generateAIImage(input: { prompt: string; style?: string; aspectRatio?: string }) {
+    return this.request('POST', '/ai-cocreate/image', input);
+  }
+  generateAIVideo(input: { prompt: string; durationSec?: number; style?: string }) {
+    return this.request('POST', '/ai-cocreate/video', input);
+  }
+  generateAIAudio(input: { text: string; voice?: string; format?: string }) {
+    return this.request('POST', '/ai-cocreate/audio', input);
+  }
+  generateAIHashtags(input: { content: string; count?: number }) {
+    return this.request('POST', '/ai-cocreate/hashtags', input);
+  }
+
+  // === Auth enhancements (Phase 2) ===
+  requestRecovery(email: string) {
+    return this.request('POST', '/auth/recovery/request', { email });
+  }
+  verifyRecovery(email: string, code: string) {
+    return this.request('POST', '/auth/recovery/verify', { email, code });
+  }
+  resetHandle(email: string, code: string, newHandle: string) {
+    return this.request('POST', '/auth/recovery/reset', { email, code, newHandle });
+  }
+  sendEmailCode() { return this.request('POST', '/auth/email/send-code'); }
+  verifyEmailCode(code: string) { return this.request('POST', '/auth/email/verify', { code }); }
+  setup2FA() { return this.request('POST', '/auth/2fa/setup'); }
+  verify2FA(code: string) { return this.request('POST', '/auth/2fa/verify', { code }); }
+  disable2FA(code: string) { return this.request('POST', '/auth/2fa/disable', { code }); }
+
+  // === Bookmarks ===
+  bookmarkPost(postId: string) { return this.request('POST', `/posts/${postId}/bookmark`); }
+  unbookmarkPost(postId: string) { return this.request('DELETE', `/posts/${postId}/bookmark`); }
+  listBookmarks() { return this.request('GET', '/posts/bookmarks'); }
 }
 
 export const api = new OrbitApi();

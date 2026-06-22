@@ -9,7 +9,10 @@ import { colors } from '@/lib/theme';
 import { Home, Search, PlusSquare, Inbox, User } from 'lucide-react-native';
 
 export default function AppLayout() {
-  const { isHydrated, token, hydrate } = useAuth();
+  // Subscribe to each piece individually so re-renders fire on changes
+  const isHydrated = useAuth((s) => s.isHydrated);
+  const token = useAuth((s) => s.token);
+  const hydrate = useAuth((s) => s.hydrate);
 
   useEffect(() => {
     if (!isHydrated) hydrate();
