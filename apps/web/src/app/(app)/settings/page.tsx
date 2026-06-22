@@ -11,7 +11,7 @@ type Section = 'profile' | 'agent' | 'privacy' | 'safety' | 'notifications' | 'd
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, signout } = useAuth();
   const [section, setSection] = useState<Section | null>(null);
   const [agentState, setAgentState] = useState<any>(null);
   const [exporting, setExporting] = useState(false);
@@ -55,7 +55,7 @@ export default function SettingsPage() {
       });
       if (res.ok) {
         alert('Account scheduled for deletion. You have 30 days to cancel by logging in.');
-        logout();
+        signout();
         router.push('/onboarding');
       } else {
         alert('Delete failed');
