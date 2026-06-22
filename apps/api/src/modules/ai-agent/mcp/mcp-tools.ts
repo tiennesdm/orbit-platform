@@ -18,7 +18,7 @@ export function registerAllMcpTools(registry: McpToolRegistry) {
     async handler(input, ctx) {
       const limit = Math.min(input.limit || 10, 50);
       const result = getVedadbPool().query(
-        `SELECT p.id, p.content_text, p.mode, p.created_at, u.handle, u.display_name
+        `SELECT p.post_id as id, p.content_text, p.mode, p.created_at, u.handle, u.display_name
          FROM posts p
          JOIN users u ON u.did = p.author_id
          WHERE p.author_id IN (

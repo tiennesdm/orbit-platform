@@ -51,8 +51,9 @@ export class SearchService {
   }
 
   private async searchPosts(query: string, _userId: string | null, limit: number) {
-    const r = getVedadbPool().query(
-      `SELECT p.id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
+    console.log('[searchPosts] query:', query, 'limit:', limit);
+    const r = await getVedadbPool().query(
+      `SELECT p.post_id as id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
               u.handle, u.display_name,
               ts_rank_cd(p.search_vector, plainto_tsquery('english', $1)) AS rank
        FROM posts p
@@ -62,6 +63,7 @@ export class SearchService {
        LIMIT $2`,
       [query, limit],
     );
+    console.log('[searchPosts] rows:', r.rowCount, r.rows?.length);
     return {
       query, entity: 'post' as const, results: r.rows, total: r.rowCount || 0, mode: 'text' as const,
     };
@@ -109,7 +111,7 @@ export class SearchService {
   private async enrichPosts(ids: string[], scores: any[]) {
     if (ids.length === 0) return [];
     const r = getVedadbPool().query(
-      `SELECT p.id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
+      `SELECT p.post_id as id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
               u.handle, u.display_name
        FROM posts p
        JOIN users u ON u.did = p.author_id

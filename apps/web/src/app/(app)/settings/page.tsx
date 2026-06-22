@@ -17,7 +17,7 @@ export default function SettingsPage() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    api.aiAgent.state().then(setAgentState).catch(() => {});
+    api.ai.state().then(setAgentState).catch(() => {});
   }, []);
 
   async function exportData() {
@@ -218,7 +218,8 @@ function ProfileSection({ onBack }: { onBack: () => void }) {
 }
 
 function AgentSection({ state, onUpdate, onBack }: { state: any; onUpdate: (u: any) => void; onBack: () => void }) {
-  if (!state) return <BackHeader title="AI Agent" onBack={onBack} />;
+  // Default state while loading
+  const s = state || { autonomyLevel: 'suggest', personality: 'supportive', liveMode: false };
   return (
     <div className="max-w-2xl mx-auto">
       <BackHeader title="AI Agent" onBack={onBack} />
@@ -237,13 +238,13 @@ function AgentSection({ state, onUpdate, onBack }: { state: any; onUpdate: (u: a
               key={level}
               className={clsx(
                 'flex items-start gap-3 p-3 mb-2 rounded-lg cursor-pointer border',
-                state.autonomyLevel === level ? 'border-ai bg-ai/5' : 'border-hairline',
+                s.autonomyLevel === level ? 'border-ai bg-ai/5' : 'border-hairline',
               )}
             >
               <input
                 type="radio"
                 name="autonomy"
-                checked={state.autonomyLevel === level}
+                checked={s.autonomyLevel === level}
                 onChange={() => onUpdate({ autonomyLevel: level })}
                 className="mt-1"
               />
@@ -266,13 +267,13 @@ function AgentSection({ state, onUpdate, onBack }: { state: any; onUpdate: (u: a
               key={p}
               className={clsx(
                 'flex items-center gap-3 p-3 mb-2 rounded-lg cursor-pointer border',
-                state.personality === p ? 'border-ai bg-ai/5' : 'border-hairline',
+                s.personality === p ? 'border-ai bg-ai/5' : 'border-hairline',
               )}
             >
               <input
                 type="radio"
                 name="personality"
-                checked={state.personality === p}
+                checked={s.personality === p}
                 onChange={() => onUpdate({ personality: p })}
               />
               <p className="font-semibold text-sm capitalize">{p}</p>
@@ -281,7 +282,7 @@ function AgentSection({ state, onUpdate, onBack }: { state: any; onUpdate: (u: a
         </section>
 
         <p className="text-xs text-text-tertiary text-center">
-          {state.liveMode ? '🟢 Live — connected to Claude' : '🟡 Echo mode — set ANTHROPIC_API_KEY for real responses'}
+          {s.liveMode ? '🟢 Live — connected to Claude' : '🟡 Echo mode — set ANTHROPIC_API_KEY for real responses'}
         </p>
       </div>
     </div>

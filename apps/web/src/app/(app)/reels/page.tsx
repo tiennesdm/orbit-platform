@@ -19,8 +19,8 @@ interface Reel {
 const MOCK_REELS: Reel[] = [
   {
     id: '1',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg',
+    url: 'https://www.w3schools.com/html/mov_bbb.mp4',
+    thumbnail: undefined,
     caption: 'A peaceful moment in nature 🌿 #mindfulness',
     author: { did: 'did:orbit:alice', handle: 'alice', displayName: 'Alice' },
     likeCount: 1284,
@@ -30,8 +30,8 @@ const MOCK_REELS: Reel[] = [
   },
   {
     id: '2',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg',
+    url: 'https://www.w3schools.com/html/movie.mp4',
+    thumbnail: undefined,
     caption: 'Building a startup: Day 100 🚀',
     author: { did: 'did:orbit:bob', handle: 'bob', displayName: 'Bob' },
     likeCount: 5672,
@@ -41,10 +41,10 @@ const MOCK_REELS: Reel[] = [
   },
   {
     id: '3',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    thumbnail: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg',
+    url: 'https://www.w3schools.com/html/mov_bbb.mp4',
+    thumbnail: undefined,
     caption: 'Quick recipe: 5-min ramen hack 🍜',
-    author: { did: 'orbit:carol', handle: 'carol', displayName: 'Carol' },
+    author: { did: 'did:orbit:carol', handle: 'carol', displayName: 'Carol' },
     likeCount: 8921,
     commentCount: 412,
     shareCount: 234,
