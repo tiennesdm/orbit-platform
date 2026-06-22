@@ -1,175 +1,126 @@
-/**
- * Search Service
- * - Hybrid search: BM25 full-text + vector similarity (RRF fusion)
- * - Type-aware: users, posts, reels, groups, listings, hashtags
- * - Vedadb native: pgvector for vectors, GIN for full-text
- */
-
 import { Injectable } from '@nestjs/common';
-import { getVedadbPool, OrbitVector } from '@orbit/db';
-import type { SearchQuery, SearchResponse, SearchResult } from '@orbit/types';
+import { getVedadbPool } from '@orbit/db';
+import { EmbeddingsService } from './embeddings.service';
+import { MetricsService } from '../../common/observability/metrics.service';
+
+export type SearchEntity = 'post' | 'reel' | 'user' | 'group' | 'marketplace' | 'all';
 
 @Injectable()
 export class SearchService {
-  private readonly db = getVedadbPool();
-  private readonly vector: OrbitVector;
+  constructor(
+    private readonly embeddings: EmbeddingsService,
+    private readonly metrics: MetricsService,
+  ) {}
 
-  constructor() {
-    this.vector = new OrbitVector(this.db);
+  /**
+   * Unified search — text + vector hybrid (when vector available).
+   */
+  async search(
+    query: string,
+    entityType: SearchEntity,
+    userId: string | null,
+    limit: number = 20,
+  ): Promise<{
+    query: string;
+    entity: SearchEntity;
+    results: any[];
+    total: number;
+    mode: 'hybrid' | 'text' | 'vector' | 'exact';
+  }> {
+    this.metrics.searchQueries.inc({ type: entityType === 'all' ? 'mixed' : entityType });
+
+    const hasVector = this.embeddings.isAvailable();
+
+    if (entityType === 'user') {
+      return this.searchUsers(query, userId, limit);
+    }
+    if (entityType === 'post' || entityType === 'all') {
+      if (hasVector) {
+        const hybrid = await this.embeddings.hybridSearch(query, 'post', limit);
+        const enriched = await this.enrichPosts(hybrid.map((r) => r.id), hybrid);
+        return {
+          query, entity: entityType, results: enriched, total: enriched.length, mode: 'hybrid',
+        };
+      }
+      return this.searchPosts(query, userId, limit);
+    }
+    if (entityType === 'group') return this.searchGroups(query, limit);
+    if (entityType === 'marketplace') return this.searchMarketplace(query, limit);
+
+    return { query, entity: entityType, results: [], total: 0, mode: 'exact' };
   }
 
-  async search(query: SearchQuery): Promise<SearchResponse> {
-    const limit = Math.min(query.limit ?? 20, 100);
-
-    if (query.type === 'users' || query.type === 'all' || !query.type) {
-      const users = await this.searchUsers(query.q, limit);
-      if (users.length > 0) return { results: users };
-    }
-
-    if (query.type === 'posts' || query.type === 'all' || !query.type) {
-      const posts = await this.searchPosts(query.q, query.filters, limit);
-      return { results: posts };
-    }
-
-    if (query.type === 'reels') {
-      const reels = await this.searchReels(query.q, limit);
-      return { results: reels };
-    }
-
-    if (query.type === 'groups') {
-      const groups = await this.searchGroups(query.q, limit);
-      return { results: groups };
-    }
-
-    if (query.type === 'listings') {
-      const listings = await this.searchListings(query.q, limit);
-      return { results: listings };
-    }
-
-    if (query.type === 'hashtags') {
-      const hashtags = await this.searchHashtags(query.q, limit);
-      return { results: hashtags };
-    }
-
-    return { results: [] };
+  private async searchPosts(query: string, _userId: string | null, limit: number) {
+    console.log('[searchPosts] query:', query, 'limit:', limit);
+    const r = await getVedadbPool().query(
+      `SELECT p.post_id as id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
+              u.handle, u.display_name,
+              ts_rank_cd(p.search_vector, plainto_tsquery('english', $1)) AS rank
+       FROM posts p
+       JOIN users u ON u.did = p.author_id
+       WHERE p.search_vector @@ plainto_tsquery('english', $1)
+       ORDER BY rank DESC
+       LIMIT $2`,
+      [query, limit],
+    );
+    console.log('[searchPosts] rows:', r.rowCount, r.rows?.length);
+    return {
+      query, entity: 'post' as const, results: r.rows, total: r.rowCount || 0, mode: 'text' as const,
+    };
   }
 
-  private async searchUsers(q: string, limit: number): Promise<SearchResult[]> {
-    const res = await this.db.query<any>(
-      `SELECT did, handle, display_name as "displayName", avatar_cid as "avatarCid",
-              bio, pds_endpoint as "pdsEndpoint", reputation_score as "reputationScore",
-              status, created_at as "createdAt", updated_at as "updatedAt"
+  private async searchUsers(query: string, _userId: string | null, limit: number) {
+    const r = getVedadbPool().query(
+      `SELECT id, handle, display_name, bio, follower_count
        FROM users
        WHERE (handle ILIKE $1 OR display_name ILIKE $1 OR bio ILIKE $1)
-         AND status = 'active'
-       ORDER BY reputation_score DESC
+         AND is_active = true
+       ORDER BY follower_count DESC NULLS LAST
        LIMIT $2`,
-      [`%${q}%`, limit]
+      [`%${query}%`, limit],
     );
-
-    return res.rows.map((u, i) => ({
-      type: 'user' as const,
-      id: u.did,
-      score: 1 - i * 0.01,
-      data: u,
-    }));
+    return {
+      query, entity: 'user' as const, results: r.rows, total: r.rowCount || 0, mode: 'exact' as const,
+    };
   }
 
-  private async searchPosts(q: string, filters: any, limit: number): Promise<SearchResult[]> {
-    const mode = filters?.mode ? `AND mode = $2` : '';
-    const params: any[] = [q];
-    if (filters?.mode) params.push(filters.mode);
-    params.push(limit);
-
-    const res = await this.db.query<any>(
-      `SELECT post_id as "postId", author_id as "authorId", mode, visibility,
-              group_id as "groupId", content_text as "contentText", media_ids as "mediaIds",
-              hashtags, like_count as "likeCount", comment_count as "commentCount",
-              created_at as "createdAt",
-              ts_headline('simple', content_text, plainto_tsquery('simple', $1)) as highlight
-       FROM posts
-       WHERE search_vector @@ plainto_tsquery('simple', $1)
-         AND deleted_at IS NULL
-         AND visibility IN ('public', 'followers')
-         ${mode}
-       ORDER BY ts_rank(search_vector, plainto_tsquery('simple', $1)) DESC,
-                created_at DESC
-       LIMIT $${params.length}`,
-      params
-    );
-
-    return res.rows.map((p, i) => ({
-      type: 'post' as const,
-      id: p.postId,
-      score: 1 - i * 0.01,
-      highlight: p.highlight,
-      data: p,
-    }));
-  }
-
-  private async searchReels(q: string, limit: number): Promise<SearchResult[]> {
-    const res = await this.db.query<any>(
-      `SELECT reel_id as "reelId", author_id as "authorId", media_id as "mediaId",
-              caption, hashtags, duration_ms as "durationMs",
-              view_count as "viewCount", like_count as "likeCount",
-              created_at as "createdAt"
-       FROM reels
-       WHERE search_vector @@ plainto_tsquery('simple', $1)
-       ORDER BY ts_rank(search_vector, plainto_tsquery('simple', $1)) DESC
-       LIMIT $2`,
-      [q, limit]
-    );
-
-    return res.rows.map((r, i) => ({ type: 'reel' as const, id: r.reelId, score: 1 - i * 0.01, data: r }));
-  }
-
-  private async searchGroups(q: string, limit: number): Promise<SearchResult[]> {
-    const res = await this.db.query<any>(
-      `SELECT group_id as "groupId", slug, name, description, privacy,
-              member_count as "memberCount", topics, created_by as "createdBy",
-              created_at as "createdAt"
+  private async searchGroups(query: string, limit: number) {
+    const r = getVedadbPool().query(
+      `SELECT id, name, slug, description, member_count
        FROM groups
-       WHERE (name ILIKE $1 OR description ILIKE $1 OR topics && ARRAY[$1])
-         AND privacy = 'public'
-       ORDER BY member_count DESC LIMIT $2`,
-      [`%${q}%`, limit]
-    );
-
-    return res.rows.map((g, i) => ({ type: 'group' as const, id: g.groupId, score: 1 - i * 0.01, data: g }));
-  }
-
-  private async searchListings(q: string, limit: number): Promise<SearchResult[]> {
-    const res = await this.db.query<any>(
-      `SELECT listing_id as "listingId", seller_id as "sellerId", title,
-              description, price_cents as "priceCents", currency,
-              category, location_label as "locationLabel",
-              created_at as "createdAt"
-       FROM marketplace_listings
-       WHERE search_vector @@ plainto_tsquery('simple', $1) AND status = 0
-       ORDER BY ts_rank(search_vector, plainto_tsquery('simple', $1)) DESC
+       WHERE name ILIKE $1 OR description ILIKE $1
+       ORDER BY member_count DESC NULLS LAST
        LIMIT $2`,
-      [q, limit]
+      [`%${query}%`, limit],
     );
-
-    return res.rows.map((l, i) => ({ type: 'listing' as const, id: l.listingId, score: 1 - i * 0.01, data: l }));
+    return { query, entity: 'group' as const, results: r.rows, total: r.rowCount || 0, mode: 'exact' as const };
   }
 
-  private async searchHashtags(q: string, limit: number): Promise<SearchResult[]> {
-    const res = await this.db.query<any>(
-      `SELECT unnest(hashtags) as hashtag, COUNT(*) as post_count
-       FROM posts
-       WHERE hashtags && ARRAY[$1]
-         AND created_at > NOW() - INTERVAL '30 days'
-       GROUP BY hashtag
-       ORDER BY post_count DESC LIMIT $2`,
-      [`#${q.toLowerCase()}`, limit]
+  private async searchMarketplace(query: string, limit: number) {
+    const r = getVedadbPool().query(
+      `SELECT id, title, description, price_cents, currency, status
+       FROM marketplace_listings
+       WHERE status = 'active' AND (title ILIKE $1 OR description ILIKE $1)
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [`%${query}%`, limit],
     );
+    return { query, entity: 'marketplace' as const, results: r.rows, total: r.rowCount || 0, mode: 'exact' as const };
+  }
 
-    return res.rows.map((h, i) => ({
-      type: 'hashtag' as const,
-      id: h.hashtag,
-      score: h.post_count,
-      data: { hashtag: h.hashtag, postCount: h.post_count },
-    }));
+  private async enrichPosts(ids: string[], scores: any[]) {
+    if (ids.length === 0) return [];
+    const r = getVedadbPool().query(
+      `SELECT p.post_id as id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
+              u.handle, u.display_name
+       FROM posts p
+       JOIN users u ON u.did = p.author_id
+       WHERE p.post_id::text = ANY($1::text[]) OR (p.author_id || ':' || p.post_id::text) = ANY($1::text[])`,
+      [ids],
+    );
+    const scoreMap = new Map(scores.map((s) => [s.id, s.score]));
+    return r.rows
+      .map((row) => ({ ...row, score: scoreMap.get(row.id) || 0 }))
+      .sort((a, b) => (b.score || 0) - (a.score || 0));
   }
 }

@@ -1,14 +1,26 @@
 import { Module } from '@nestjs/common';
-import { HttpModule } from '@nestjs/axios';
-import { IdentityModule } from '../identity/identity.module';
+import { AnthropicAgentService } from './anthropic-agent.service';
+import { MemoryService } from './memory.service';
+import { PersonalityService } from './personality.service';
+import { McpToolRegistry } from './mcp/mcp-tool';
+import { registerAllMcpTools } from './mcp/mcp-tools';
 import { AiAgentController } from './ai-agent.controller';
-import { AiAgentService } from './ai-agent.service';
-import { AiAgentToolsService } from './ai-agent-tools.service';
 
 @Module({
-  imports: [HttpModule, IdentityModule],
   controllers: [AiAgentController],
-  providers: [AiAgentService, AiAgentToolsService],
-  exports: [AiAgentService],
+  providers: [
+    AnthropicAgentService,
+    MemoryService,
+    PersonalityService,
+    {
+      provide: McpToolRegistry,
+      useFactory: () => {
+        const r = new McpToolRegistry();
+        registerAllMcpTools(r);
+        return r;
+      },
+    },
+  ],
+  exports: [AnthropicAgentService, MemoryService, PersonalityService, McpToolRegistry],
 })
 export class AiAgentModule {}

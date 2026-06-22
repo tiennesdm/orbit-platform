@@ -22,6 +22,7 @@ interface AuthState {
   refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  hasHydrated: boolean;
   error: string | null;
 
   signup: (data: { handle?: string; displayName: string }) => Promise<void>;
@@ -40,6 +41,7 @@ export const useAuth = create<AuthState>()(
       refreshToken: null,
       isAuthenticated: false,
       isLoading: false,
+      hasHydrated: false,
       error: null,
 
       async signup(data) {
@@ -143,7 +145,15 @@ export const useAuth = create<AuthState>()(
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
+        isAuthenticated: state.isAuthenticated,
+        user: state.user,
       }),
+      onRehydrateStorage: () => (state) => {
+        // Mark as hydrated so pages know it's safe to check auth
+        if (state) {
+          state.hasHydrated = true;
+        }
+      },
     }
   )
 );

@@ -1,58 +1,94 @@
-import { Body, Controller, Get, Post as HttpPost, Put } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { z } from 'zod';
-import { AiAgentService } from './ai-agent.service';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import type { AgentChatRequest, AgentChatResponse, AgentState } from '@orbit/types';
-
-const ChatRequestSchema = z.object({
-  message: z.string().min(1).max(10000),
-  conversationId: z.string().optional(),
-  stream: z.boolean().optional(),
-});
-
-const UpdateStateSchema = z.object({
-  personality: z.enum(['helpful', 'witty', 'professional', 'friendly', 'concise']).optional(),
-  autonomyLevel: z.enum(['ask', 'suggest', 'auto']).optional(),
-  enabledFeatures: z.record(z.boolean()).optional(),
-  longTermMemory: z.record(z.any()).optional(),
-  contextWindowSize: z.number().min(512).max(32768).optional(),
-});
+import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { AnthropicAgentService } from './anthropic-agent.service';
+import { getVedadbPool } from '@orbit/db';
 
 @ApiTags('ai-agent')
-@ApiBearerAuth()
 @Controller('ai-agent')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 export class AiAgentController {
-  constructor(private readonly agent: AiAgentService) {}
-
-  @HttpPost('chat')
-  @ApiOperation({ summary: 'Send a message to your personal AI assistant' })
-  async chat(
-    @CurrentUser('did') did: string,
-    @Body() body: z.infer<typeof ChatRequestSchema>
-  ): Promise<AgentChatResponse> {
-    return this.agent.chat(did, body as AgentChatRequest);
-  }
+  constructor(private readonly agent: AnthropicAgentService) {}
 
   @Get('state')
-  @ApiOperation({ summary: 'Get AI agent state (personality, autonomy, memory)' })
-  async getState(@CurrentUser('did') did: string): Promise<AgentState> {
-    return this.agent.getState(did);
+  @ApiOperation({ summary: 'Get current AI agent state for the user' })
+  async state(@Req() req: any) {
+    const did = req.user.did;
+    const r = await getVedadbPool().query(
+      `SELECT autonomy_level::text, personality
+       FROM ai_agent_state WHERE user_id = $1`,
+      [did],
+    );
+    const state = r.rows[0] || { autonomy_level: 'suggest', personality: 'supportive' };
+    return {
+      autonomyLevel: this.autonomyNumToStr(parseInt(state.autonomy_level, 10)),
+      personality: state.personality,
+      liveMode: this.agent.isLive(),
+    };
   }
 
-  @Put('state')
-  @ApiOperation({ summary: 'Update AI agent settings' })
-  async updateState(
-    @CurrentUser('did') did: string,
-    @Body() body: z.infer<typeof UpdateStateSchema>
-  ): Promise<AgentState> {
-    return this.agent.updateState(did, body as Partial<AgentState>);
+  @Post('state')
+  @ApiOperation({ summary: 'Update AI agent state' })
+  async updateState(@Req() req: any, @Body() body: { autonomyLevel?: string; personality?: string }) {
+    const did = req.user.did;
+    const validPersonality = ['helpful', 'supportive', 'witty', 'professional', 'playful'].includes(body.personality || '')
+      ? body.personality
+      : 'supportive';
+    const autonomyNum = body.autonomyLevel === 'ask' ? 0 : body.autonomyLevel === 'auto' ? 2 : 1;
+    await getVedadbPool().query(
+      `INSERT INTO ai_agent_state (user_id, autonomy_level, personality)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (user_id) DO UPDATE
+       SET autonomy_level = $2,
+           personality = $3`,
+      [did, autonomyNum, validPersonality],
+    );
+    return { ok: true };
   }
 
-  @Get('digest')
-  @ApiOperation({ summary: 'Generate daily digest of network activity' })
-  async digest(@CurrentUser('did') did: string): Promise<{ summary: string }> {
-    const summary = await this.agent.generateDailyDigest(did);
-    return { summary };
+  @Post('chat')
+  @ApiOperation({ summary: 'Chat with the AI agent' })
+  async chat(@Req() req: any, @Body() body: { message: string; history?: any[] }) {
+    const did = req.user.did;
+    const s = await getVedadbPool().query(
+      `SELECT autonomy_level::text, personality FROM ai_agent_state WHERE user_id = $1`,
+      [did],
+    );
+    const dbState = s.rows[0];
+    const state = {
+      autonomy_level: dbState ? this.autonomyNumToStr(parseInt(dbState.autonomy_level, 10)) : 'suggest',
+      personality: dbState?.personality || 'supportive',
+    };
+
+    const reply = await this.agent.chat(body.message, {
+      userId: did,
+      did,
+      autonomyLevel: state.autonomy_level as any,
+      personality: state.personality as any,
+      history: body.history,
+    });
+
+    return { reply, liveMode: this.agent.isLive() };
+  }
+
+  @Post('digest')
+  @ApiOperation({ summary: 'Generate a digest of what the user missed' })
+  async digest(@Req() req: any) {
+    const did = req.user.did;
+    const prompt = 'Give me a brief digest of what I missed today. Use your search_feed and get_unread_notifications tools.';
+    const reply = await this.agent.chat(prompt, {
+      userId: did,
+      did,
+      autonomyLevel: 'suggest',
+      personality: 'supportive',
+    });
+    return { digest: reply, generatedAt: new Date().toISOString() };
+  }
+
+  private autonomyNumToStr(n: number): 'ask' | 'suggest' | 'auto' {
+    if (n === 0) return 'ask';
+    if (n === 2) return 'auto';
+    return 'suggest';
   }
 }

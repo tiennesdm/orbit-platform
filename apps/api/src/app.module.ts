@@ -23,10 +23,13 @@ import { NotificationModule } from './modules/notification/notification.module';
 import { SearchModule } from './modules/search/search.module';
 import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
+import { MediaModule } from './modules/media/media.module';
+import { GdprModule } from './modules/gdpr/gdpr.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
+import { ObservabilityModule } from './common/observability/observability.module';
 
 @Module({
   imports: [
@@ -54,6 +57,7 @@ import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
     ]),
 
     TerminusModule,
+    ObservabilityModule,
 
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -85,6 +89,8 @@ import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
     SearchModule,
     AiAgentModule,
     ModerationModule,
+    MediaModule,
+    GdprModule,
   ],
   controllers: [HealthController],
   providers: [

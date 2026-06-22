@@ -132,6 +132,9 @@ export const api = {
       const q = new URLSearchParams(params).toString();
       return request<any>(`/search?${q}`);
     },
+    universal: (q: string, type: string = 'all', limit: number = 20) => {
+      return request<any>(`/search?q=${encodeURIComponent(q)}&type=${type}&limit=${limit}`);
+    },
   },
 
   // Notifications

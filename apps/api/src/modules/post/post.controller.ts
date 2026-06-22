@@ -3,6 +3,7 @@ import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { PostService } from './post.service';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { ZodValidationPipe } from '../../common/pipes/zod-validation.pipe';
 import type { Post, CreatePostInput, UpdatePostInput, PostMode } from '@orbit/types';
 
 const CreatePostSchema = z.object({
@@ -31,7 +32,7 @@ export class PostController {
   @ApiOperation({ summary: 'Create a new post (4 modes supported)' })
   async create(
     @CurrentUser('did') did: string,
-    @Body() body: z.infer<typeof CreatePostSchema>
+    @Body(new ZodValidationPipe(CreatePostSchema)) body: z.infer<typeof CreatePostSchema>
   ): Promise<Post> {
     return this.posts.create(did, body as CreatePostInput);
   }

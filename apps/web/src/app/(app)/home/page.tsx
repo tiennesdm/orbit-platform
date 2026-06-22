@@ -12,6 +12,7 @@ type Mode = 'all' | 'intimate' | 'public' | 'visual' | 'community';
 export default function HomePage() {
   const router = useRouter();
   const isAuthenticated = useAuth((s) => s.isAuthenticated);
+  const hasHydrated = useAuth((s) => s.hasHydrated);
   const fetchMe = useAuth((s) => s.fetchMe);
   const [mode, setMode] = useState<Mode>('all');
   const [feed, setFeed] = useState<any>(null);
@@ -19,13 +20,14 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!hasHydrated) return; // Wait for zustand persist to rehydrate from localStorage
     if (isAuthenticated) {
       loadFeed();
       loadDigest();
     } else {
       router.push('/onboarding');
     }
-  }, [isAuthenticated, mode]);
+  }, [isAuthenticated, hasHydrated, mode]);
 
   async function loadFeed() {
     setLoading(true);
