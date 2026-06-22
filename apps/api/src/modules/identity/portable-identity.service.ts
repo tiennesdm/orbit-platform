@@ -40,12 +40,12 @@ export class PortableIdentityService {
       ),
       this.db.query(
         `SELECT followee_id as "followeeId", notify_level as "notifyLevel",
-                is_close_friend as "isCloseFriend", created_at as "createdAt"
+                is_close_friend as "isCloseFriend"
          FROM follows WHERE follower_id = $1`,
         [did]
       ),
       this.db.query(
-        `SELECT follower_id as "followerId", created_at as "createdAt"
+        `SELECT follower_id as "followerId"
          FROM follows WHERE followee_id = $1`,
         [did]
       ),
@@ -61,7 +61,7 @@ export class PortableIdentityService {
         [did]
       ),
       this.db.query(
-        `SELECT subscription_tier as "tier", creator_id as "creatorId",
+        `SELECT tier as "tier", creator_id as "creatorId",
                 started_at as "startedAt", renews_at as "renewsAt"
          FROM subscriptions WHERE subscriber_id = $1 AND is_active = TRUE`,
         [did]

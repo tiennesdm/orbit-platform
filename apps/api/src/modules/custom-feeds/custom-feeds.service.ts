@@ -47,7 +47,7 @@ export class CustomFeedService {
     if (updates.isPublic !== undefined) { fields.push(`is_public = $${i++}`); values.push(updates.isPublic); }
     if (updates.rules !== undefined) { fields.push(`rules = $${i++}`); values.push(JSON.stringify(updates.rules)); }
     if (fields.length === 0) return (await this.getFeed(id, ownerDid))!;
-    fields.push(`updated_at = NOW()`);
+    // NOTE: custom_feeds table doesn't have updated_at column — schema has only created_at
     values.push(id, ownerDid);
     await this.db.query(`UPDATE custom_feeds SET ${fields.join(', ')} WHERE id = $${i++} AND owner_did = $${i}`, values);
     return (await this.getFeed(id, ownerDid))!;
