@@ -1,0 +1,84 @@
+import {
+  Controller, Get, Post, Delete, Param, Body, UseGuards, Req, Query,
+  UseInterceptors, UploadedFile, BadRequestException, Res,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
+import { Response } from 'express';
+import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { MediaService } from './media.service';
+
+@ApiTags('media')
+@Controller('media')
+export class MediaController {
+  constructor(private readonly media: MediaService) {}
+
+  @Post('presign')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get a presigned upload URL (S3) or local upload endpoint' })
+  @UseGuards(JwtAuthGuard)
+  async presign(
+    @Req() req: any,
+    @Body() body: { contentType: string; bytes: number },
+  ) {
+    return this.media.getPresignedUpload(req.user.userId, body.contentType, body.bytes);
+  }
+
+  @Post('local-upload')
+  @ApiOperation({ summary: 'Local upload fallback (when S3 not configured)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  async localUpload(
+    @Query('key') key: string,
+    @Query('type') contentType: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    if (!key) throw new BadRequestException('key required');
+    if (!file) throw new BadRequestException('file required');
+    return this.media.saveLocal(key, file.buffer, contentType);
+  }
+
+  @Get('local/:key')
+  @ApiOperation({ summary: 'Serve a locally-stored media file' })
+  async local(@Param('key') key: string, @Res() res: Response) {
+    const decoded = decodeURIComponent(key);
+    const result = await this.media.getLocal(decoded);
+    if (!result) {
+      res.status(404).send('Not found');
+      return;
+    }
+    res.setHeader('Content-Type', result.contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(result.buffer);
+  }
+
+  @Post('register')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Register uploaded media metadata in the DB' })
+  @UseGuards(JwtAuthGuard)
+  async register(
+    @Req() req: any,
+    @Body() body: {
+      key: string;
+      type: 'image' | 'video' | 'audio' | 'file';
+      mimeType: string;
+      bytes: number;
+      width?: number;
+      height?: number;
+      durationSec?: number;
+      blurhash?: string;
+      altText?: string;
+    },
+  ) {
+    return this.media.saveMetadata(req.user.userId, body);
+  }
+
+  @Delete(':id')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete media owned by the user' })
+  @UseGuards(JwtAuthGuard)
+  async delete(@Req() req: any, @Param('id') id: string) {
+    await this.media.deleteMedia(id, req.user.userId);
+    return { ok: true };
+  }
+}

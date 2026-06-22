@@ -1,7 +1,7 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
-import { SearchService } from './search.service';
-import type { SearchResponse } from '@orbit/types';
+import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { SearchService, SearchEntity } from './search.service';
+import { OptionalAuthGuard } from '../../common/auth/optional-auth.guard';
 
 @ApiTags('search')
 @Controller('search')
@@ -10,17 +10,17 @@ export class SearchController {
 
   @Get()
   @ApiOperation({ summary: 'Universal search (users, posts, reels, groups, listings, hashtags)' })
+  @ApiBearerAuth()
+  @UseGuards(OptionalAuthGuard)
   async search(
+    @Req() req: any,
     @Query('q') q: string,
-    @Query('type') type?: 'users' | 'posts' | 'reels' | 'groups' | 'listings' | 'hashtags' | 'all',
+    @Query('type') type?: string,
     @Query('limit') limit?: string,
-    @Query('mode') mode?: 'public' | 'visual' | 'intimate' | 'community'
-  ): Promise<SearchResponse> {
-    return this.svc.search({
-      q,
-      type,
-      limit: limit ? parseInt(limit, 10) : undefined,
-      filters: mode ? { mode } : undefined,
-    });
+  ) {
+    const entity = (type as SearchEntity) || 'all';
+    const lim = limit ? Math.min(parseInt(limit, 10), 50) : 20;
+    const userId = req.user?.userId || null;
+    return this.svc.search(q || '', entity, userId, lim);
   }
 }

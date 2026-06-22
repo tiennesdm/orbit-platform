@@ -267,14 +267,14 @@ async function bootstrap() {
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
   process.on('SIGINT', () => void shutdown('SIGINT'));
 
-  // Crash handlers (log + exit, since we may be in a bad state)
+  // Crash handlers — log and exit for uncaughtException, but for unhandledRejection
+  // we just log (one bad query shouldn't take down the whole API)
   process.on('uncaughtException', (err) => {
     logger.fatal({ err: err.message, stack: err.stack }, 'uncaughtException — exiting');
     process.exit(1);
   });
   process.on('unhandledRejection', (reason) => {
-    logger.fatal({ reason: String(reason) }, 'unhandledRejection — exiting');
-    process.exit(1);
+    logger.error({ reason: String(reason) }, 'unhandledRejection — logged but not exiting');
   });
 }
 

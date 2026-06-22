@@ -15,6 +15,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { getVedadbPool, OrbitCache } from '@orbit/db';
 import { IdentityService } from './identity.service';
+import { MetricsService } from '../../common/observability/metrics.service';
 import type { WebAuthnRegistrationOptions, WebAuthnRegistrationCredential } from '@orbit/types';
 
 @Injectable()
@@ -24,7 +25,8 @@ export class WebAuthnService {
 
   constructor(
     private readonly config: ConfigService,
-    private readonly identityService: IdentityService
+    private readonly identityService: IdentityService,
+    private readonly metrics: MetricsService,
   ) {
     this.cache = new OrbitCache(this.db);
   }
@@ -96,6 +98,7 @@ export class WebAuthnService {
     if (!verification.verified || !verification.registrationInfo) {
       throw new BadRequestException('Registration not verified');
     }
+    this.metrics.webauthnRegistrations.inc();
 
     // Create user account
     const session = await this.identityService.register({
@@ -202,8 +205,10 @@ export class WebAuthnService {
     }
 
     if (!verification.verified) {
+      this.metrics.webauthnLogins.inc({ result: 'fail' });
       throw new UnauthorizedException('Authentication not verified');
     }
+    this.metrics.webauthnLogins.inc({ result: 'success' });
 
     // Update counter (replay protection)
     await this.db.query(
