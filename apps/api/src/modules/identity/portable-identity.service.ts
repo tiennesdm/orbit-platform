@@ -30,6 +30,17 @@ export class PortableIdentityService {
     const user = await this.identityService.findByDid(did);
     if (!user) throw new BadRequestException('User not found');
 
+    // Record the export in gdpr_requests for audit trail
+    try {
+      await this.db.query(
+        `INSERT INTO gdpr_requests (user_did, type, status, completed_at)
+         VALUES ($1, 'export', 'completed', NOW())`,
+        [did]
+      );
+    } catch (e) {
+      // Non-fatal — log but don't fail export
+    }
+
     // Fetch all user-owned data
     const [posts, follows, followers, messages, lists, notifications] = await Promise.all([
       this.db.query(

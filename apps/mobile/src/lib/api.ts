@@ -256,8 +256,8 @@ export class OrbitApi {
   subscribe(handle: string, tierId: string) {
     return this.request('POST', '/monetization/subscribe', { handle, tierId });
   }
-  // NOTE: backend route is /monetization/creators/:handle/earnings — needs handle
-  getCreatorEarnings(handle: string = 'me') { return this.request('GET', `/monetization/creators/${handle}/earnings`); }
+  // NOTE: backend route is /monetization/creators/:handle/earnings (public, needs handle)
+  getCreatorEarnings(handle: string) { return this.request('GET', `/monetization/creators/${handle}/earnings`); }
   getCreatorTiers(handle: string) { return this.request('GET', `/monetization/creators/${handle}/tiers`); }
   getMySubscriptions() { return this.request('GET', '/monetization/me/subscriptions'); }
   getSubscriptionStatus(handle: string) {
@@ -371,6 +371,20 @@ export class OrbitApi {
   setup2FA() { return this.request('POST', '/auth/2fa/setup'); }
   verify2FA(code: string) { return this.request('POST', '/auth/2fa/verify', { code }); }
   disable2FA(code: string) { return this.request('POST', '/auth/2fa/disable', { code }); }
+
+  // === Media ===
+  // Backend route: POST /media/register accepts {key, type, mimeType, bytes, ...}
+  // Mobile sends {cid, mimeType, size} — map cid→key, size→bytes, default type
+  registerMedia(input: { cid?: string; key?: string; mimeType: string; size?: number; bytes?: number; type?: 'image' | 'video' | 'audio' | 'file'; width?: number; height?: number }) {
+    return this.request<any>('POST', '/media/register', {
+      key: input.cid || input.key,
+      type: input.type || 'image',
+      mimeType: input.mimeType,
+      bytes: input.bytes || input.size || 0,
+      width: input.width,
+      height: input.height,
+    });
+  }
 
   // === Bookmarks ===
   bookmarkPost(postId: string) { return this.request('POST', `/posts/${postId}/bookmark`); }

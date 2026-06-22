@@ -6,6 +6,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { MediaService } from './media.service';
 
 @ApiTags('media')
@@ -18,10 +19,10 @@ export class MediaController {
   @ApiOperation({ summary: 'Get a presigned upload URL (S3) or local upload endpoint' })
   @UseGuards(JwtAuthGuard)
   async presign(
-    @Req() req: any,
+    @CurrentUser('did') ownerDid: string,
     @Body() body: { contentType: string; bytes: number },
   ) {
-    return this.media.getPresignedUpload(req.user.userId, body.contentType, body.bytes);
+    return this.media.getPresignedUpload(ownerDid, body.contentType, body.bytes);
   }
 
   @Post('local-upload')
@@ -57,28 +58,44 @@ export class MediaController {
   @ApiOperation({ summary: 'Register uploaded media metadata in the DB' })
   @UseGuards(JwtAuthGuard)
   async register(
-    @Req() req: any,
+    @CurrentUser('did') ownerDid: string,
     @Body() body: {
-      key: string;
-      type: 'image' | 'video' | 'audio' | 'file';
+      // Canonical fields
+      key?: string;
+      type?: 'image' | 'video' | 'audio' | 'file';
       mimeType: string;
-      bytes: number;
+      bytes?: number;
       width?: number;
       height?: number;
       durationSec?: number;
       blurhash?: string;
       altText?: string;
+      // Mobile-friendly aliases
+      cid?: string;
+      size?: number;
     },
   ) {
-    return this.media.saveMetadata(req.user.userId, body);
+    // Normalize: mobile sends {cid, mimeType, size}, backend canonical is {key, type, mimeType, bytes}
+    const normalized = {
+      key: body.key || body.cid || '',
+      type: body.type || 'image',
+      mimeType: body.mimeType,
+      bytes: body.bytes ?? body.size ?? 0,
+      width: body.width,
+      height: body.height,
+      durationSec: body.durationSec,
+      blurhash: body.blurhash,
+      altText: body.altText,
+    };
+    return this.media.saveMetadata(ownerDid, normalized);
   }
 
   @Delete(':id')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Delete media owned by the user' })
   @UseGuards(JwtAuthGuard)
-  async delete(@Req() req: any, @Param('id') id: string) {
-    await this.media.deleteMedia(id, req.user.userId);
+  async delete(@CurrentUser('did') ownerDid: string, @Param('id') id: string) {
+    await this.media.deleteMedia(id, ownerDid);
     return { ok: true };
   }
 }
