@@ -49,6 +49,7 @@ export class MonetizationController {
   @Post('tips')
   @ApiOperation({ summary: 'Send a tip' })
   async sendTip(@CurrentUser('did') did: string, @Body() body: z.infer<typeof TipSchema>) {
+    this.m['logger']?.log?.(`sendTip did=${did} body=${JSON.stringify(body)}`);
     return this.m.sendTip({ fromDid: did, ...body });
   }
 

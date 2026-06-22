@@ -3,7 +3,7 @@
  * Mock payment gateway (UPI/Razorpay) — swap interface for production
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { getVedadbPool } from '@orbit/db';
 import { v4 as uuid } from 'uuid';
 
@@ -51,9 +51,9 @@ export class MonetizationService {
 
   // ============= TIPS =============
   async sendTip(opts: { fromDid: string; toDid: string; amountPaise: number; message?: string; postId?: string }): Promise<Tip> {
-    if (opts.amountPaise < 100) throw new Error('Minimum tip is ₹1 (100 paise)');
-    if (opts.amountPaise > 10000000) throw new Error('Maximum tip is ₹100,000 (10M paise)');
-    if (opts.fromDid === opts.toDid) throw new Error('Cannot tip yourself');
+    if (opts.amountPaise < 100) throw new BadRequestException('Minimum tip is ₹1 (100 paise)');
+    if (opts.amountPaise > 10000000) throw new BadRequestException('Maximum tip is ₹100,000 (10M paise)');
+    if (opts.fromDid === opts.toDid) throw new BadRequestException('Cannot tip yourself');
 
     const id = uuid();
     // In production: create payment intent via Razorpay
@@ -94,15 +94,15 @@ export class MonetizationService {
     );
     const subsRes = await this.db.query<any>(
       `SELECT
-         COALESCE(SUM(amount_paise), 0) as monthly_paise,
+         COALESCE(SUM(price_cents), 0) as monthly_cents,
          COUNT(*) as subscriber_count
-       FROM subscriptions WHERE creator_did = $1 AND status = 'active'`,
+       FROM subscriptions WHERE creator_id = $1 AND is_active = true`,
       [creatorDid]
     );
     return {
       totalTipsPaise: parseInt(res.rows[0]?.total_tips_paise || 0, 10),
       tipCount: parseInt(res.rows[0]?.tip_count || 0, 10),
-      monthlyPaise: parseInt(subsRes.rows[0]?.monthly_paise || 0, 10),
+      monthlyPaise: parseInt(subsRes.rows[0]?.monthly_cents || 0, 10),
       subscriberCount: parseInt(subsRes.rows[0]?.subscriber_count || 0, 10),
       currency: 'INR',
     };
@@ -137,26 +137,35 @@ export class MonetizationService {
   }
 
   // ============= SUBSCRIPTIONS =============
+  // Use the existing subscriptions table (subscriber_id, creator_id, tier, price_cents)
+  // tier is smallint — map our string id to numeric (hash)
+  private tierIdToSmallInt(tierId: string): number {
+    let h = 0;
+    for (let i = 0; i < tierId.length; i++) h = (h * 31 + tierId.charCodeAt(i)) | 0;
+    return Math.abs(h) % 32767 + 1; // smallint range
+  }
+
   async subscribe(opts: { subscriberDid: string; creatorDid: string; tierId: string }): Promise<Subscription> {
     const tier = await this.db.query<any>(
       `SELECT amount_paise, currency FROM subscription_tiers WHERE creator_did = $1 AND id = $2`,
       [opts.creatorDid, opts.tierId]
     );
-    if (!tier.rows[0]) throw new Error('Tier not found');
+    if (!tier.rows[0]) throw new NotFoundException('Tier not found');
     const { amount_paise, currency } = tier.rows[0];
-
-    const id = uuid();
+    const tierSmall = this.tierIdToSmallInt(opts.tierId);
     const renewsAt = new Date(Date.now() + 30 * 86400 * 1000);
+
     await this.db.query(
-      `INSERT INTO subscriptions (id, subscriber_did, creator_did, tier_id, amount_paise, currency, status, renews_at)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active', $7)
-       ON CONFLICT (subscriber_did, creator_did) DO UPDATE SET
-         tier_id = EXCLUDED.tier_id, amount_paise = EXCLUDED.amount_paise,
-         status = 'active', renews_at = EXCLUDED.renews_at, cancelled_at = NULL`,
-      [id, opts.subscriberDid, opts.creatorDid, opts.tierId, amount_paise, currency, renewsAt]
+      `INSERT INTO subscriptions (subscriber_id, creator_id, tier, price_cents, currency, started_at, renews_at, is_active)
+       VALUES ($1, $2, $3, $4, $5, NOW(), $6, true)
+       ON CONFLICT (subscriber_id, creator_id) DO UPDATE SET
+         tier = EXCLUDED.tier, price_cents = EXCLUDED.price_cents,
+         is_active = true, renews_at = EXCLUDED.renews_at`,
+      [opts.subscriberDid, opts.creatorDid, tierSmall, amount_paise, currency, renewsAt]
     );
     return {
-      id, subscriberDid: opts.subscriberDid, creatorDid: opts.creatorDid, tierId: opts.tierId,
+      id: `${opts.subscriberDid}-${opts.creatorDid}`,
+      subscriberDid: opts.subscriberDid, creatorDid: opts.creatorDid, tierId: opts.tierId,
       amountPaise: amount_paise, currency, status: 'active',
       startedAt: new Date().toISOString(), renewsAt: renewsAt.toISOString(),
     };
@@ -164,21 +173,21 @@ export class MonetizationService {
 
   async cancelSubscription(subscriberDid: string, creatorDid: string): Promise<void> {
     await this.db.query(
-      `UPDATE subscriptions SET status = 'cancelled', cancelled_at = NOW()
-       WHERE subscriber_did = $1 AND creator_did = $2 AND status = 'active'`,
+      `UPDATE subscriptions SET is_active = false, cancelled_at = NOW()
+       WHERE subscriber_id = $1 AND creator_id = $2 AND is_active = true`,
       [subscriberDid, creatorDid]
     );
   }
 
   async listMySubscriptions(subscriberDid: string): Promise<any[]> {
     const res = await this.db.query<any>(
-      `SELECT s.id, s.creator_did as "creatorDid", u.handle, u.display_name as "displayName",
+      `SELECT s.creator_id as "creatorDid", u.handle, u.display_name as "displayName",
               u.avatar_cid as "avatarCid", t.name as "tierName", t.color as "tierColor",
-              s.amount_paise as "amountPaise", s.currency, s.status, s.renews_at as "renewsAt"
+              s.price_cents as "priceCents", s.currency, s.is_active as "isActive", s.renews_at as "renewsAt"
        FROM subscriptions s
-       JOIN users u ON u.did = s.creator_did
-       JOIN subscription_tiers t ON t.creator_did = s.creator_did AND t.id = s.tier_id
-       WHERE s.subscriber_did = $1 AND s.status = 'active'
+       JOIN users u ON u.did = s.creator_id
+       LEFT JOIN subscription_tiers t ON t.creator_did = s.creator_id
+       WHERE s.subscriber_id = $1 AND s.is_active = true
        ORDER BY s.renews_at ASC`,
       [subscriberDid]
     );
