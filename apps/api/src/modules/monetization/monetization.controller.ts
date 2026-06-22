@@ -18,12 +18,17 @@ const TipSchema = z.object({
 });
 
 const TierSchema = z.object({
-  id: z.string().min(1).max(50),
+  id: z.string().min(1).max(50).optional(), // auto-generated UUID if omitted
   name: z.string().min(1).max(80),
   description: z.string().max(500).optional(),
-  amountPaise: z.number().int().min(100),
+  // Accept either amountPaise (canonical) or priceCents (mobile-friendly)
+  amountPaise: z.number().int().min(100).optional(),
+  priceCents: z.number().int().min(1).optional(),
   color: z.string().optional(),
   benefits: z.array(z.string()).optional(),
+  perks: z.array(z.string()).optional(), // alias for benefits
+}).refine((v) => v.amountPaise !== undefined || v.priceCents !== undefined, {
+  message: 'Either amountPaise or priceCents is required',
 });
 
 const SubscribeSchema = z.object({
@@ -67,7 +72,20 @@ export class MonetizationController {
   @ApiBearerAuth()
   @Post('tiers')
   async createTier(@CurrentUser('did') did: string, @Body() body: z.infer<typeof TierSchema>) {
-    return this.m.createTier({ creatorDid: did, ...body });
+    // Map mobile-friendly fields to canonical schema:
+    //   priceCents → amountPaise (1 cent = 1 paise for now, USD-like)
+    //   perks → benefits
+    //   id → auto-generated UUID
+    const { randomUUID } = await import('crypto');
+    return this.m.createTier({
+      creatorDid: did,
+      id: body.id ?? randomUUID(),
+      name: body.name,
+      description: body.description,
+      amountPaise: body.amountPaise ?? (body.priceCents ?? 0) * 100,
+      color: body.color,
+      benefits: body.benefits ?? body.perks,
+    });
   }
 
   @Public()

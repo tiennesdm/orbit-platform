@@ -265,58 +265,82 @@ export class OrbitApi {
   }
 
   // === Custom feeds (P0) ===
-  listCustomFeeds() { return this.request('GET', '/feeds/custom'); }
-  createCustomFeed(input: { name: string; emoji?: string; rules: any[] }) {
-    return this.request('POST', '/feeds/custom', input);
+  // Backend routes: POST /feeds (create), GET /feeds/mine, PUT /feeds/:id, DELETE /feeds/:id
+  //                 GET /feeds/public, POST /feeds/:id/pin, POST /feeds/:id/subscribe
+  // NOTE: /feeds/mine returns a PLAIN ARRAY `[{...}]` not `{feeds: [...]}`
+  listCustomFeeds() { return this.request<any>('GET', '/feeds/mine'); }
+  listPublicFeeds() { return this.request<any>('GET', '/feeds/public'); }
+  createCustomFeed(input: { name: string; emoji?: string; rules: any[]; isPublic?: boolean }) {
+    return this.request('POST', '/feeds', input);
   }
-  getCustomFeed(id: string) { return this.request('GET', `/feeds/custom/${id}`); }
   updateCustomFeed(id: string, input: any) {
-    return this.request('PUT', `/feeds/custom/${id}`, input);
+    return this.request('PUT', `/feeds/${id}`, input);
   }
-  deleteCustomFeed(id: string) { return this.request('DELETE', `/feeds/custom/${id}`); }
-  previewCustomFeed(rules: any[]) {
-    return this.request('POST', '/feeds/custom/preview', { rules });
-  }
+  deleteCustomFeed(id: string) { return this.request('DELETE', `/feeds/${id}`); }
+  pinFeed(id: string) { return this.request('POST', `/feeds/${id}/pin`); }
+  subscribeToFeed(id: string) { return this.request('POST', `/feeds/${id}/subscribe`); }
 
   // === Federation (P0) ===
+  // Backend routes: GET /federation/resolve/:handle, GET /federation/did/:did,
+  //                 POST /federation/handle, POST /federation/domain, POST /federation/domain/:domain/verify,
+  //                 GET /federation/me/domains
   verifyDomain(domain: string) {
-    return this.request('POST', '/federation/verify-domain', { domain });
+    return this.request('POST', `/federation/domain/${encodeURIComponent(domain)}/verify`);
   }
   resolveHandleAtProtocol(handle: string) {
-    return this.request('GET', `/federation/at-resolve?handle=${encodeURIComponent(handle)}`);
+    return this.request('GET', `/federation/resolve/${encodeURIComponent(handle)}`);
+  }
+  resolveDid(did: string) {
+    return this.request('GET', `/federation/did/${encodeURIComponent(did)}`);
   }
   linkDomain(domain: string) {
-    return this.request('POST', '/federation/link-domain', { domain });
+    return this.request('POST', '/federation/domain', { domain });
   }
-  getFederationStatus() { return this.request('GET', '/federation/status'); }
+  getFederationStatus() { return this.request('GET', '/federation/me/domains'); }
 
   // === Wellness (P0) ===
-  getWellnessStats() { return this.request('GET', '/wellness/stats'); }
+  // Backend has /wellness/usage (GET) + /wellness/tick (POST) — not /stats
+  getWellnessStats() { return this.request('GET', '/wellness/usage'); }
   getWellnessSettings() { return this.request('GET', '/wellness/settings'); }
   updateWellnessSettings(settings: any) {
-    return this.request('PUT', '/wellness/settings', settings);
+    return this.request('POST', '/wellness/settings', settings);
   }
+  // Backend has POST /wellness/parental (upsert) — not GET
   getParentalControls() { return this.request('GET', '/wellness/parental'); }
   updateParentalControls(settings: any) {
-    return this.request('PUT', '/wellness/parental', settings);
+    return this.request('POST', '/wellness/parental', settings);
   }
-  logWellnessEvent(event: { eventType: string; durationSec?: number; metadata?: any }) {
-    return this.request('POST', '/wellness/events', event);
+  logWellnessTick(event: { durationSec?: number; metadata?: any }) {
+    return this.request('POST', '/wellness/tick', event);
   }
 
   // === Remix (P0) ===
-  createRemix(input: { rootPostId: string; mode: string; contentText: string; remixType: string }) {
-    return this.request('POST', '/remix/create', input);
+  // Backend flow: create the new post first, then link via POST /remix
+  // Routes: POST /remix (link), GET /remix/of/:postId, GET /remix/chain/:postId
+  async createRemix(input: { sourcePostId: string; mode: string; contentText: string; kind?: string }) {
+    // Step 1: create the new post (this is the actual remix content)
+    const newPost = await this.createPost({
+      mode: input.mode,
+      contentText: input.contentText,
+      visibility: 'public',
+    });
+    // Step 2: link it to the source
+    return this.request<any>('POST', '/remix', {
+      remixPostId: String(newPost.postId),
+      sourcePostId: String(input.sourcePostId),
+      kind: (input.kind || 'duet') as any,
+    });
   }
-  listRemixes(rootPostId: string) { return this.request('GET', `/remix/${rootPostId}/remixes`); }
-  getRemixTree(rootPostId: string) { return this.request('GET', `/remix/${rootPostId}/tree`); }
+  listRemixes(rootPostId: string) { return this.request<any[]>('GET', `/remix/of/${rootPostId}`); }
+  getRemixTree(rootPostId: string) { return this.request<any[]>('GET', `/remix/chain/${rootPostId}`); }
 
   // === AI Co-Creation (P0) ===
+  // Backend routes: POST /ai-cocreate/{text,captions,image,video,audio,hashtags}, GET /ai-cocreate/assets
   generateAICaption(input: { mode: string; topic?: string; tone?: string; keywords?: string[] }) {
-    return this.request('POST', '/ai-cocreate/caption', input);
+    return this.request('POST', '/ai-cocreate/captions', input);
   }
   generateAILongText(input: { topic: string; tone?: string; length?: number; keywords?: string[] }) {
-    return this.request('POST', '/ai-cocreate/longtext', input);
+    return this.request('POST', '/ai-cocreate/text', input);
   }
   generateAIImage(input: { prompt: string; style?: string; aspectRatio?: string }) {
     return this.request('POST', '/ai-cocreate/image', input);
@@ -330,6 +354,7 @@ export class OrbitApi {
   generateAIHashtags(input: { content: string; count?: number }) {
     return this.request('POST', '/ai-cocreate/hashtags', input);
   }
+  listAIAssets() { return this.request('GET', '/ai-cocreate/assets'); }
 
   // === Auth enhancements (Phase 2) ===
   requestRecovery(email: string) {

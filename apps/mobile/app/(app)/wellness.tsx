@@ -43,7 +43,7 @@ export default function Wellness() {
     }
     setBusy(true);
     try {
-      await api.updateWellnessSettings({ daily_minutes_limit: mins });
+      await api.updateWellnessSettings({ dailyMinutesLimit: mins });
       queryClient.invalidateQueries({ queryKey: ['wellness', 'settings'] });
       setDailyLimit('');
       Alert.alert('Saved', 'Daily time limit updated');
@@ -55,7 +55,6 @@ export default function Wellness() {
   };
 
   const s: any = settings ?? {};
-  const today = (stats as any)?.today ?? { minutesUsed: 0, sessionsCount: 0 };
 
   return (
     <View style={styles.container}>
@@ -70,9 +69,16 @@ export default function Wellness() {
           <ActivityIndicator color={colors.accent.DEFAULT} />
         ) : (
           <View style={styles.statsRow}>
-            <Stat label="Time used" value={`${today.minutesUsed ?? 0} min`} />
-            <Stat label="Sessions" value={`${today.sessionsCount ?? 0}`} />
-            <Stat label="Daily limit" value={s.daily_minutes_limit ? `${s.daily_minutes_limit} min` : 'Off'} />
+            {/* /wellness/usage returns {usedTodaySeconds, usedWeekSeconds, daily[]} */}
+            <Stat
+              label="Time used"
+              value={`${Math.floor(((stats as any)?.usedTodaySeconds ?? 0) / 60)} min`}
+            />
+            <Stat
+              label="Week total"
+              value={`${Math.floor(((stats as any)?.usedWeekSeconds ?? 0) / 60)} min`}
+            />
+            <Stat label="Daily limit" value={s.dailyMinutesLimit ? `${s.dailyMinutesLimit} min` : 'Off'} />
           </View>
         )}
       </View>
@@ -88,7 +94,7 @@ export default function Wellness() {
             style={styles.input}
             value={dailyLimit}
             onChangeText={setDailyLimit}
-            placeholder={s.daily_minutes_limit ? `Currently ${s.daily_minutes_limit}` : 'No limit'}
+            placeholder={s.dailyMinutesLimit ? `Currently ${s.dailyMinutesLimit}` : 'No limit'}
             placeholderTextColor={colors.text.tertiary}
             keyboardType="number-pad"
           />
@@ -106,30 +112,23 @@ export default function Wellness() {
         <Text style={styles.cardTitle}>Reduce addictive patterns</Text>
         <ToggleRow
           icon={<Moon size={20} color={colors.text.secondary} />}
-          label="Quiet hours (10pm-7am)"
-          value={!!s.quiet_hours_enabled}
-          onChange={(v) => toggleSetting('quiet_hours_enabled', v)}
-          disabled={busy}
-        />
-        <ToggleRow
-          icon={<EyeOff size={20} color={colors.text.secondary} />}
           label="Hide like counts"
-          value={!!s.hide_likes_count}
-          onChange={(v) => toggleSetting('hide_likes_count', v)}
+          value={!!s.hideLikesCount}
+          onChange={(v) => toggleSetting('hideLikesCount', v)}
           disabled={busy}
         />
         <ToggleRow
           icon={<Eye size={20} color={colors.text.secondary} />}
           label="Show session timer"
-          value={!!s.show_timer}
-          onChange={(v) => toggleSetting('show_timer', v)}
+          value={!!s.showTimer}
+          onChange={(v) => toggleSetting('showTimer', v)}
           disabled={busy}
         />
         <ToggleRow
           icon={<Bell size={20} color={colors.text.secondary} />}
           label="Disable infinite scroll"
-          value={!!s.no_infinitescroll}
-          onChange={(v) => toggleSetting('no_infinitescroll', v)}
+          value={!!s.noInfinitescroll}
+          onChange={(v) => toggleSetting('noInfinitescroll', v)}
           disabled={busy}
         />
       </View>

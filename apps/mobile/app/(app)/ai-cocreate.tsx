@@ -35,11 +35,17 @@ export default function AICoCreate() {
     try {
       let res: any;
       switch (tab) {
-        case 'caption': res = await api.generateAICaption({ mode: 'public', topic: prompt }); break;
-        case 'longtext': res = await api.generateAILongText({ topic: prompt }); break;
+        // Backend CaptionSchema: { topic, tone?, count? }
+        case 'caption': res = await api.generateAICaption({ topic: prompt }); break;
+        // Backend TextSchema: { prompt, voice?, maxTokens? }
+        case 'longtext': res = await api.generateAILongText({ prompt }); break;
+        // Backend ImageSchema: { prompt, style?, size? }
         case 'image': res = await api.generateAIImage({ prompt }); break;
+        // Backend VideoSchema: { prompt, durationSec? }
         case 'video': res = await api.generateAIVideo({ prompt }); break;
+        // Backend AudioSchema: { text, voice? }
         case 'audio': res = await api.generateAIAudio({ text: prompt }); break;
+        // Backend HashtagSchema: { content, count? }
         case 'hashtags': res = await api.generateAIHashtags({ content: prompt }); break;
       }
       setResult(formatResult(tab, res));

@@ -29,7 +29,8 @@ export default function Feeds() {
     queryFn: () => api.listCustomFeeds(),
   });
   const [showCreate, setShowCreate] = useState(false);
-  const feeds = (data as any)?.feeds ?? [];
+  // /feeds/mine returns a plain array; handle both shapes defensively
+  const feeds: any[] = Array.isArray(data) ? data : (data as any)?.feeds ?? [];
 
   return (
     <View style={styles.container}>
