@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, User, Bot, Shield, Eye, Bell, Download, Trash2, Key, Globe, ChevronRight, AlertTriangle, FileText, Users, Lock, Sparkles, Copy, Check } from 'lucide-react';
+import { ArrowLeft, User, Bot, Shield, Eye, Bell, Download, Trash2, Key, Globe, ChevronRight, AlertTriangle, FileText, Users, Lock, Sparkles, Copy, Check, Headphones, Wand2, Filter } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { clsx } from 'clsx';
@@ -173,6 +173,36 @@ export default function SettingsPage() {
           title="Portable Identity"
           subtitle="Export your DID, switch PDS provider"
           onClick={() => setSection('data')}
+        />
+        <SectionButton
+          icon={<Globe size={20} />}
+          title="Custom domain"
+          subtitle="Use yourname.com as your handle (DNS verification)"
+          onClick={() => router.push('/domains')}
+        />
+        <SectionButton
+          icon={<Filter size={20} />}
+          title="Custom feeds"
+          subtitle="Build your own algorithm rules"
+          onClick={() => router.push('/feeds')}
+        />
+        <SectionButton
+          icon={<Headphones size={20} />}
+          title="Voice rooms"
+          subtitle="Start or join live audio conversations"
+          onClick={() => router.push('/voice')}
+        />
+        <SectionButton
+          icon={<Wand2 size={20} />}
+          title="AI Co-Create"
+          subtitle="Generate text, image, video, audio"
+          onClick={() => router.push('/ai-cocreate')}
+        />
+        <SectionButton
+          icon={<Shield size={20} />}
+          title="Digital wellness"
+          subtitle="Time limits, slow mode, hide counts"
+          onClick={() => router.push('/wellness')}
         />
         <SectionButton
           icon={<Download size={20} />}

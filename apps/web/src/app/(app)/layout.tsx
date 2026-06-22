@@ -2,6 +2,7 @@ import { FloatingNav } from '@/components/nav/FloatingNav';
 import { TopHeader } from '@/components/nav/TopHeader';
 import { AiAgentFab } from '@/components/ai-agent/AiAgentFab';
 import { SearchPalette } from '@/components/SearchPalette';
+import { WellnessOverlay } from '@/components/WellnessOverlay';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -11,6 +12,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <FloatingNav />
       <AiAgentFab />
       <SearchPalette />
+      <WellnessOverlay />
     </div>
   );
 }
