@@ -25,6 +25,7 @@ import { AiAgentModule } from './modules/ai-agent/ai-agent.module';
 import { ModerationModule } from './modules/moderation/moderation.module';
 import { MediaModule } from './modules/media/media.module';
 import { GdprModule } from './modules/gdpr/gdpr.module';
+import { EmailModule } from './modules/email/email.module';
 
 // Common
 import { HealthController } from './common/health/health.controller';
@@ -36,6 +37,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     ConfigModule.forRoot({
       isGlobal: true,
       cache: true,
+      envFilePath: ['.env', '../../.env'],
     }),
 
     ThrottlerModule.forRoot([
@@ -91,6 +93,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     ModerationModule,
     MediaModule,
     GdprModule,
+    EmailModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -148,3 +148,43 @@
     letter-spacing: -0.025em;
   }
 }
+
+/* Dark mode token overrides — applied when <html class="dark"> is set */
+.dark {
+  --bg-page: #0A0A0F;
+  --bg-elevated: #14141A;
+  --bg-card: #1E1E25;
+  --bg-subtle: #25252D;
+  --bg-cream: #1A1A20;
+
+  --text-primary: #F5F4F0;
+  --text-secondary: #A8A39A;
+  --text-tertiary: #6B6862;
+
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairlineStrong: rgba(255, 255, 255, 0.14);
+}
+
+.dark body {
+  background: #0A0A0F;
+  color: #F5F4F0;
+}
+
+.dark .bg-bg-page { background-color: #0A0A0F; }
+.dark .bg-bg-elevated { background-color: #14141A; }
+.dark .bg-bg-card { background-color: #1E1E25; }
+.dark .bg-bg-subtle { background-color: #25252D; }
+.dark .bg-bg-cream { background-color: #1A1A20; }
+
+.dark .text-text-primary { color: #F5F4F0; }
+.dark .text-text-secondary { color: #A8A39A; }
+.dark .text-text-tertiary { color: #6B6862; }
+
+.dark .border-hairline { border-color: rgba(255, 255, 255, 0.08); }
+.dark .border-hairlineStrong { border-color: rgba(255, 255, 255, 0.14); }
+
+.dark .glass {
+  background: rgba(20, 20, 26, 0.78);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}

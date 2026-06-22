@@ -16,6 +16,35 @@ export default function HomePage() {
   const fetchMe = useAuth((s) => s.fetchMe);
   const [mode, setMode] = useState<Mode>('all');
   const [feed, setFeed] = useState<any>(null);
+  const [pinned, setPinned] = useState<string[]>([]);
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const user = useAuth((s) => s.user);
+
+  function togglePin(postId: string) {
+    const post = feed?.posts?.find((p: any) => p.id === postId);
+    if (!post) return;
+    setPinned((prev) => {
+      const isPinned = prev.includes(postId);
+      const next = isPinned
+        ? prev.filter((p) => p !== postId)
+        : [...prev, postId].slice(0, 3);
+
+      // Persist to localStorage
+      const pinnedDetails = next
+        .map((id) => feed?.posts?.find((p: any) => p.id === id))
+        .filter(Boolean)
+        .map((p: any) => ({
+          id: p.id,
+          mode: p.mode,
+          content: p.contentText,
+          contentText: p.contentText,
+          pinnedAt: Date.now(),
+        }));
+      localStorage.setItem('orbit-pinned-posts', JSON.stringify(pinnedDetails));
+      window.dispatchEvent(new CustomEvent('orbit-pinned-update', { detail: pinnedDetails }));
+      return next;
+    });
+  }
   const [digest, setDigest] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -142,7 +171,7 @@ export default function HomePage() {
         )}
 
         {!loading && feed?.posts?.map((post: any, i: number) => (
-          <article key={i} className="bg-bg-card border-b border-hairline mb-1.5">
+          <article key={i} className="bg-bg-card border-b border-hairline mb-1.5 relative">
             <div className="flex items-center gap-2.5 px-4 py-3">
               <div className={clsx('w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm', `avatar-${(i % 9) + 1}`)}>
                 {post.authorDisplayName?.[0]?.toUpperCase() || 'U'}
@@ -157,8 +186,42 @@ export default function HomePage() {
                   @{post.authorHandle} · {new Date(post.createdAt).toLocaleDateString()}
                 </div>
               </div>
-              <button className="text-text-secondary px-2 py-1 text-base tracking-tighter">···</button>
+              <button
+                onClick={() => setOpenMenu(openMenu === post.id ? null : post.id)}
+                className="text-text-secondary px-2 py-1 text-base tracking-tighter hover:bg-bg-subtle rounded-full relative"
+              >
+                ···
+              </button>
             </div>
+            {openMenu === post.id && (
+              <div className="absolute right-4 mt-0 w-48 bg-bg-card border border-hairline rounded-xl shadow-lg z-10 py-1">
+                {post.authorDid === user?.did && (
+                  <button
+                    onClick={() => { togglePin(post.id); setOpenMenu(null); }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-bg-subtle flex items-center gap-2"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={pinned.includes(post.id) ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.8">
+                      <path d="M12 2L9 9H2l6 4-3 9 7-5 7 5-3-9 6-4h-7z"/>
+                    </svg>
+                    {pinned.includes(post.id) ? 'Unpin from profile' : 'Pin to profile'}
+                  </button>
+                )}
+                <button
+                  onClick={() => { setOpenMenu(null); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg-subtle flex items-center gap-2"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                  Not interested
+                </button>
+                <button
+                  onClick={() => { setOpenMenu(null); }}
+                  className="w-full px-3 py-2 text-left text-sm hover:bg-bg-subtle flex items-center gap-2"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M3 7v6h6M21 17a9 9 0 0 1-9 9 9 9 0 0 1-9-9 9 9 0 0 1 9-9 9 9 0 0 1 9 9z"/></svg>
+                  Report
+                </button>
+              </div>
+            )}
             <div className="px-4 pb-3 text-[14.5px] leading-relaxed">
               {post.contentText?.split(/(\s)/).map((part: string, idx: number) =>
                 part.startsWith('#') ? <span key={idx} className="text-accent font-semibold">{part}</span> :

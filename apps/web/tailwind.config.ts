@@ -2,10 +2,11 @@ import type { Config } from 'tailwindcss';
 
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {
-        // ORBIT design tokens — warm + calm + premium
+        // ORBIT design tokens — warm + calm + premium (light mode)
         bg: {
           page: '#EEEAE0',
           elevated: '#FAF8F4',

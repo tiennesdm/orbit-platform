@@ -204,6 +204,70 @@ export class OrbitApi {
     return this.request('POST', '/media/presign', { contentType, bytes });
   }
   registerMedia(input: any) { return this.request('POST', '/media/register', input); }
+  // === Auth enhancements (Phase 2) ===
+  requestRecovery(email: string) {
+    return this.request('POST', '/auth/recovery/request', { email });
+  }
+  verifyRecovery(email: string, code: string) {
+    return this.request('POST', '/auth/recovery/verify', { email, code });
+  }
+  resetHandle(email: string, code: string, newHandle: string) {
+    return this.request('POST', '/auth/recovery/reset', { email, code, newHandle });
+  }
+  sendEmailCode() {
+    return this.request('POST', '/auth/email/send-code');
+  }
+  verifyEmailCode(code: string) {
+    return this.request('POST', '/auth/email/verify', { code });
+  }
+  setup2FA() {
+    return this.request('POST', '/auth/2fa/setup');
+  }
+
+  // === Profile enhancements ===
+  updateProfile(updates: {
+    displayName?: string;
+    bio?: string;
+    avatarCid?: string;
+    coverCid?: string;
+    email?: string;
+    themeColor?: string;
+    linkWebsite?: string;
+    linkTwitter?: string;
+    linkGithub?: string;
+    linkLinkedin?: string;
+    linkCustomLabel?: string;
+    linkCustomUrl?: string;
+  }) {
+    return this.request('PUT', '/identity/me', updates);
+  }
+
+  // === Drafts ===
+  listDrafts() { return this.request('GET', '/posts/drafts'); }
+  saveDraft(input: any) { return this.request('POST', '/posts/drafts', input); }
+  deleteDraft(id: string) { return this.request('DELETE', `/posts/drafts/${id}`); }
+  schedulePost(draftId: string, scheduledAt: string) {
+    return this.request('POST', `/posts/drafts/${draftId}/schedule`, { scheduledAt });
+  }
+  listScheduled() { return this.request('GET', '/posts/scheduled'); }
+
+  // === Pinned posts ===
+  pinPost(postId: string) { return this.request('POST', `/posts/${postId}/pin`); }
+  unpinPost(postId: string) { return this.request('DELETE', `/posts/${postId}/pin`); }
+  listPinned(handle: string) { return this.request('GET', `/identity/${handle}/pinned`); }
+
+  // === Lists ===
+  listUserLists() { return this.request('GET', '/lists'); }
+  createList(input: { name: string; kind: string; emoji?: string; description?: string }) {
+    return this.request('POST', '/lists', input);
+  }
+  muteUser(handle: string) { return this.request('POST', `/identity/${handle}/mute`); }
+  blockUser(handle: string) { return this.request('POST', `/identity/${handle}/block`); }
+  unmuteUser(handle: string) { return this.request('DELETE', `/identity/${handle}/mute`); }
+  unblockUser(handle: string) { return this.request('DELETE', `/identity/${handle}/block`); }
+
+  // === Hashtag ===
+  getTag(name: string) { return this.request('GET', `/tag/${name}`); }
 }
 
 export const api = new OrbitApi();
