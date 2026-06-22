@@ -16,7 +16,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (user) {
-      setBio(user.bio || '');
+      setBio((user as any).bio || '');
       setName(user.displayName);
     }
   }, [user]);
@@ -103,7 +103,7 @@ export default function ProfilePage() {
       {/* Bio (non-edit mode) */}
       {!editing && (
         <div className="px-4 py-3 text-[13.5px] leading-relaxed text-center">
-          {user.bio || <span className="text-text-tertiary">No bio yet</span>}
+          {(user as any).bio || <span className="text-text-tertiary">No bio yet</span>}
         </div>
       )}
 
