@@ -251,9 +251,9 @@ export default function LoginPage() {
           )}
 
           {/* Forgot handle link */}
-          <button className="text-text-tertiary text-sm mt-4 hover:text-text-secondary transition-colors text-center">
+          <Link href="/forgot" className="text-text-tertiary text-sm mt-4 hover:text-text-secondary transition-colors text-center block">
             Forgot your handle?
-          </button>
+          </Link>
 
           {/* Sign up CTA */}
           <div className="mt-12 pt-6 border-t border-hairline text-center">

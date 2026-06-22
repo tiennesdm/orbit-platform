@@ -20,12 +20,16 @@ const PAGES: Result[] = [
   { type: 'page', id: 'inbox', title: 'Inbox', subtitle: 'Encrypted messages', emoji: '💬', href: '/inbox' },
   { type: 'page', id: 'notifications', title: 'Notifications', subtitle: 'Likes, follows, mentions', emoji: '🔔', href: '/notifications' },
   { type: 'page', id: 'compose', title: 'Compose', subtitle: 'New post', emoji: '✏️', href: '/compose' },
+  { type: 'page', id: 'drafts', title: 'Drafts', subtitle: 'Unpublished posts', emoji: '📝', href: '/drafts' },
   { type: 'page', id: 'bookmarks', title: 'Bookmarks', subtitle: 'Saved posts', emoji: '🔖', href: '/bookmarks' },
   { type: 'page', id: 'marketplace', title: 'Marketplace', subtitle: 'Buy & sell', emoji: '🛍️', href: '/marketplace' },
   { type: 'page', id: 'groups', title: 'Groups', subtitle: 'Communities', emoji: '👥', href: '/groups' },
+  { type: 'page', id: 'lists', title: 'Lists', subtitle: 'Mute, block, custom', emoji: '📋', href: '/lists' },
   { type: 'page', id: 'stories', title: 'Stories', subtitle: '24h ephemeral', emoji: '✨', href: '/stories' },
   { type: 'page', id: 'ai', title: 'ORBIT AI', subtitle: 'Your assistant', emoji: '🤖', href: '/ai' },
+  { type: 'page', id: 'creator', title: 'Creator Studio', subtitle: 'Analytics, monetization', emoji: '🎬', href: '/creator' },
   { type: 'page', id: 'profile', title: 'Profile', subtitle: 'Your account', emoji: '👤', href: '/profile' },
+  { type: 'page', id: 'profile-edit', title: 'Edit profile', subtitle: 'Bio, banner, links', emoji: '✏️', href: '/profile/edit' },
   { type: 'page', id: 'settings', title: 'Settings', subtitle: 'Privacy, security, AI', emoji: '⚙️', href: '/settings' },
 ];
 

@@ -161,6 +161,9 @@ export default function ProfilePage() {
         ))}
       </div>
 
+      {/* Pinned posts section */}
+      <PinnedPostsStrip />
+
       {/* Tabs */}
       <div className="flex border-t border-hairline">
         {[
@@ -195,6 +198,62 @@ export default function ProfilePage() {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function PinnedPostsStrip() {
+  const [pinned, setPinned] = useState<any[]>([]);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    // Load pinned from localStorage
+    try {
+      const stored = localStorage.getItem('orbit-pinned-posts');
+      if (stored) setPinned(JSON.parse(stored));
+    } catch {}
+  }, []);
+
+  // Listen for changes from other pages
+  useEffect(() => {
+    const handler = (e: any) => {
+      setPinned(e.detail || []);
+    };
+    window.addEventListener('orbit-pinned-update', handler);
+    return () => window.removeEventListener('orbit-pinned-update', handler);
+  }, []);
+
+  if (pinned.length === 0) return null;
+
+  return (
+    <div className="border-t border-hairline bg-bg-subtle/30">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-bg-subtle/60 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" className="text-text-primary">
+            <path d="M12 2L9 9H2l6 4-3 9 7-5 7 5-3-9 6-4h-7z"/>
+          </svg>
+          <span className="text-sm font-bold">Pinned ({pinned.length})</span>
+        </div>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={clsx('transition-transform', open && 'rotate-180')}>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
+      {open && (
+        <div className="px-4 pb-4 space-y-2">
+          {pinned.map((p, i) => (
+            <div key={p.id || i} className="bg-bg-card border border-hairline rounded-lg p-3">
+              <div className="flex items-center gap-2 text-xs text-text-tertiary mb-1.5">
+                <span className={`mode-pill ${p.mode}`}>{p.mode || 'public'}</span>
+                <span>Pinned {new Date(p.pinnedAt || Date.now()).toLocaleDateString()}</span>
+              </div>
+              <p className="text-sm line-clamp-2">{p.content || p.contentText || 'Pinned post'}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

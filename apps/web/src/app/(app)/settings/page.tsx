@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, User, Bot, Shield, Eye, Bell, Download, Trash2, Key, Globe, ChevronRight, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, User, Bot, Shield, Eye, Bell, Download, Trash2, Key, Globe, ChevronRight, AlertTriangle, FileText, Users, Lock, Sparkles, Copy, Check } from 'lucide-react';
 import { useAuth } from '@/lib/auth';
 import { api } from '@/lib/api';
 import { clsx } from 'clsx';
 
-type Section = 'profile' | 'agent' | 'privacy' | 'safety' | 'notifications' | 'data';
+type Section = 'profile' | 'agent' | 'privacy' | 'safety' | 'notifications' | 'data' | '2fa' | 'premium';
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -99,6 +99,12 @@ export default function SettingsPage() {
   if (section === 'notifications') {
     return <NotificationsSection onBack={() => setSection(null)} />;
   }
+  if (section === '2fa') {
+    return <TwoFactorSection onBack={() => setSection(null)} />;
+  }
+  if (section === 'premium') {
+    return <PremiumSection onBack={() => setSection(null)} />;
+  }
   if (section === 'data') {
     return (
       <DataSection
@@ -149,6 +155,18 @@ export default function SettingsPage() {
           title="Notifications"
           subtitle="Push, email, digest"
           onClick={() => setSection('notifications')}
+        />
+        <SectionButton
+          icon={<Lock size={20} className="text-ai" />}
+          title="Two-factor authentication"
+          subtitle="Backup codes, authenticator app"
+          onClick={() => setSection('2fa')}
+        />
+        <SectionButton
+          icon={<Sparkles size={20} className="text-amber-500" />}
+          title="ORBIT Pro"
+          subtitle="Verified badge, analytics, themes"
+          onClick={() => setSection('premium')}
         />
         <SectionButton
           icon={<Key size={20} />}
@@ -469,5 +487,154 @@ function Toggle({ label, defaultChecked }: { label: string; defaultChecked?: boo
         />
       </button>
     </label>
+  );
+}
+
+function TwoFactorSection({ onBack }: { onBack: () => void }) {
+  const [enabled, setEnabled] = useState(false);
+  const [codes, setCodes] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  async function setup() {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/v1/auth/2fa/setup', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${localStorage.getItem('orbit_token')}`,
+        },
+      }).then((r) => r.json());
+      if (res.codes) {
+        setCodes(res.codes);
+        setEnabled(true);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function copyAll() {
+    navigator.clipboard.writeText(codes.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <SectionView title="Two-factor authentication" onBack={onBack}>
+      <div className="bg-gradient-to-br from-ai-soft to-accent-soft border border-ai/20 rounded-xl p-4 mb-4">
+        <div className="flex items-center gap-2 mb-2">
+          <Lock size={16} className="text-ai" />
+          <h3 className="font-bold text-sm">Add an extra layer of security</h3>
+        </div>
+        <p className="text-sm text-text-secondary leading-relaxed">
+          When 2FA is enabled, you'll need both your passkey and a 6-digit code from your authenticator app to log in.
+        </p>
+      </div>
+
+      {!enabled ? (
+        <button
+          onClick={setup}
+          disabled={loading}
+          className="w-full py-3 bg-gradient-to-r from-accent to-ai text-white rounded-md font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {loading ? 'Setting up…' : 'Enable 2FA'}
+        </button>
+      ) : (
+        <>
+          <div className="bg-success/10 border border-success/20 rounded-lg p-3 mb-4 flex items-center gap-2 text-sm text-success">
+            <Check size={14} /> 2FA is enabled. Save your backup codes below.
+          </div>
+          <div className="bg-bg-subtle rounded-xl p-4 mb-3">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-bold text-sm">Backup codes</h3>
+              <button onClick={copyAll} className="text-xs text-accent flex items-center gap-1 hover:underline">
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+                {copied ? 'Copied' : 'Copy all'}
+              </button>
+            </div>
+            <p className="text-xs text-text-tertiary mb-3">Use each code once if you lose access to your authenticator.</p>
+            <div className="grid grid-cols-2 gap-2 font-mono text-sm">
+              {codes.map((c) => (
+                <div key={c} className="bg-bg-card rounded-md px-3 py-2 text-text-primary">{c}</div>
+              ))}
+            </div>
+          </div>
+          <button onClick={() => alert('Regenerate')} className="text-sm text-text-secondary hover:text-text-primary">
+            Regenerate codes
+          </button>
+        </>
+      )}
+    </SectionView>
+  );
+}
+
+function PremiumSection({ onBack }: { onBack: () => void }) {
+  const [tier, setTier] = useState<'free' | 'pro' | 'creator'>('free');
+  const tiers = [
+    { id: 'free', name: 'Free', price: '₹0', features: ['Standard account', 'All 4 modes', '1 GB storage', 'ORBIT watermark'] },
+    { id: 'pro', name: 'Pro', price: '₹199/mo', features: ['Verified blue badge', '10 GB storage', 'No watermark', 'Advanced AI agent', 'Custom theme color', 'Per-post analytics'] },
+    { id: 'creator', name: 'Creator', price: '₹599/mo', features: ['Everything in Pro', '100 GB storage', 'Monetization tools', 'Premium reels studio', 'Priority support', 'Featured placement'], popular: true },
+  ];
+  return (
+    <SectionView title="ORBIT Pro" onBack={onBack}>
+      <div className="bg-gradient-to-br from-amber-400 to-pink-500 rounded-2xl p-6 text-white text-center mb-5">
+        <Sparkles size={32} className="mx-auto mb-2" fill="white" />
+        <h2 className="text-2xl font-extrabold mb-1">Unlock ORBIT Pro</h2>
+        <p className="text-sm opacity-90">Verified badge, analytics, custom themes, monetization</p>
+      </div>
+      <div className="space-y-3">
+        {tiers.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTier(t.id as any)}
+            className={`w-full text-left p-4 rounded-xl border-2 transition-all ${
+              tier === t.id ? 'border-accent bg-accent/5' : 'border-hairline hover:border-hairlineStrong'
+            } ${(t as any).popular ? 'relative' : ''}`}
+          >
+            {(t as any).popular && (
+              <div className="absolute -top-2 left-4 px-2 py-0.5 bg-gradient-to-r from-amber-400 to-pink-500 text-white text-[10px] font-bold uppercase rounded-full">
+                Most popular
+              </div>
+            )}
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-extrabold text-lg">{t.name}</h3>
+              <div className="text-right">
+                <div className="font-bold">{t.price}</div>
+              </div>
+            </div>
+            <ul className="space-y-1 text-sm text-text-secondary">
+              {t.features.map((f) => (
+                <li key={f} className="flex items-center gap-1.5">
+                  <Check size={12} className="text-success flex-shrink-0" /> {f}
+                </li>
+              ))}
+            </ul>
+          </button>
+        ))}
+      </div>
+      <button className="w-full mt-5 py-3 bg-gradient-to-r from-amber-400 to-pink-500 text-white rounded-md font-bold">
+        {tier === 'free' ? 'Current plan' : 'Upgrade to ' + tier}
+      </button>
+    </SectionView>
+  );
+}
+
+function SectionView({ title, onBack, children }: { title: string; onBack: () => void; children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-bg-elevated">
+      <header className="sticky top-0 z-30 bg-bg-elevated/90 backdrop-blur-md border-b border-hairline">
+        <div className="max-w-2xl mx-auto flex items-center gap-3 px-4 py-3">
+          <button onClick={onBack} className="w-9 h-9 rounded-full bg-bg-subtle hover:bg-bg-cream flex items-center justify-center text-text-primary transition-colors">
+            <ArrowLeft size={18} />
+          </button>
+          <h1 className="font-display font-extrabold text-xl tracking-tight">{title}</h1>
+        </div>
+      </header>
+      <main className="max-w-2xl mx-auto px-4 py-5">{children}</main>
+    </div>
   );
 }

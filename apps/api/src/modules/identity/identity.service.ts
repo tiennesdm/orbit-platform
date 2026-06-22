@@ -60,16 +60,17 @@ export class IdentityService {
     // Insert user (sharded by did)
     await this.db.query(
       `INSERT INTO users (
-        did, handle, domain, display_name, bio,
+        did, handle, domain, display_name, bio, email,
         public_key, identity_key, signed_pre_key, pre_keys,
         pds_endpoint, status, metadata
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', $11)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active', $12)`,
       [
         did,
         handle,
         input.domain || null,
         input.displayName,
         input.bio || null,
+        input.email || null,
         base64.encode(identityKeyPair.publicKey),
         base64.encode(x25519KeyPair.publicKey),
         base64.encode(x25519KeyPair.privateKey), // signed pre-key (simplified)
@@ -130,11 +131,54 @@ export class IdentityService {
       `SELECT did, handle, domain, display_name as "displayName", bio, avatar_cid as "avatarCid",
               cover_cid as "coverCid", public_key as "publicKey", pds_endpoint as "pdsEndpoint",
               reputation_score as "reputationScore", status, metadata, created_at as "createdAt",
-              updated_at as "updatedAt", last_seen_at as "lastSeenAt"
+              updated_at as "updatedAt", last_seen_at as "lastSeenAt", email, email_verified as "emailVerified",
+              theme_color as "themeColor", link_website as "linkWebsite", link_twitter as "linkTwitter",
+              link_github as "linkGithub", link_linkedin as "linkLinkedin", link_custom_label as "linkCustomLabel",
+              link_custom_url as "linkCustomUrl", two_factor_enabled as "twoFactorEnabled",
+              premium_tier as "premiumTier", premium_badge as "premiumBadge"
        FROM users WHERE handle = $1 LIMIT 1`,
       [handle]
     );
     return res.rows[0] ?? null;
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    const res = await this.db.query<any>(
+      `SELECT did, handle, domain, display_name as "displayName", email, email_verified as "emailVerified"
+       FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1`,
+      [email]
+    );
+    return res.rows[0] ?? null;
+  }
+
+  async updateHandle(did: string, newHandle: string): Promise<User> {
+    // Check uniqueness
+    const existing = await this.findByHandle(newHandle);
+    if (existing && existing.did !== did) {
+      throw new Error('Handle already taken');
+    }
+    await this.db.query(`UPDATE users SET handle = $1, updated_at = NOW() WHERE did = $2`, [newHandle, did]);
+    return (await this.findByDid(did))!;
+  }
+
+  async markEmailVerified(did: string): Promise<void> {
+    await this.db.query(
+      `UPDATE users SET email_verified = TRUE, email_verified_at = NOW(), updated_at = NOW() WHERE did = $1`,
+      [did]
+    );
+  }
+
+  async set2FABackupCodes(did: string, codes: string[]): Promise<void> {
+    await this.db.query(
+      `UPDATE users SET two_factor_enabled = TRUE, two_factor_backup_codes = $1, updated_at = NOW() WHERE did = $2`,
+      [codes, did]
+    );
+  }
+
+  async issueSessionForDid(did: string): Promise<AuthSession> {
+    const user = await this.findByDid(did);
+    if (!user) throw new Error('User not found');
+    return this.issueSession(user.did, user.handle, user.displayName, user.pdsEndpoint);
   }
 
   async updateLastSeen(did: string): Promise<void> {
@@ -170,6 +214,14 @@ export class IdentityService {
     if (updates.bio !== undefined) { fields.push(`bio = $${i++}`); values.push(updates.bio); }
     if (updates.avatarCid !== undefined) { fields.push(`avatar_cid = $${i++}`); values.push(updates.avatarCid); }
     if (updates.coverCid !== undefined) { fields.push(`cover_cid = $${i++}`); values.push(updates.coverCid); }
+    if (updates.email !== undefined) { fields.push(`email = $${i++}`); values.push(updates.email); }
+    if (updates.themeColor !== undefined) { fields.push(`theme_color = $${i++}`); values.push(updates.themeColor); }
+    if (updates.linkWebsite !== undefined) { fields.push(`link_website = $${i++}`); values.push(updates.linkWebsite); }
+    if (updates.linkTwitter !== undefined) { fields.push(`link_twitter = $${i++}`); values.push(updates.linkTwitter); }
+    if (updates.linkGithub !== undefined) { fields.push(`link_github = $${i++}`); values.push(updates.linkGithub); }
+    if (updates.linkLinkedin !== undefined) { fields.push(`link_linkedin = $${i++}`); values.push(updates.linkLinkedin); }
+    if (updates.linkCustomLabel !== undefined) { fields.push(`link_custom_label = $${i++}`); values.push(updates.linkCustomLabel); }
+    if (updates.linkCustomUrl !== undefined) { fields.push(`link_custom_url = $${i++}`); values.push(updates.linkCustomUrl); }
 
     if (fields.length === 0) {
       const user = await this.findByDid(did);
@@ -253,6 +305,7 @@ export interface RegisterInput {
   domain?: string;
   displayName: string;
   bio?: string;
+  email?: string;
 }
 
 export interface UpdateProfileInput {
@@ -260,4 +313,12 @@ export interface UpdateProfileInput {
   bio?: string;
   avatarCid?: string;
   coverCid?: string;
+  email?: string;
+  themeColor?: string;
+  linkWebsite?: string;
+  linkTwitter?: string;
+  linkGithub?: string;
+  linkLinkedin?: string;
+  linkCustomLabel?: string;
+  linkCustomUrl?: string;
 }
