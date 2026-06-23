@@ -7,10 +7,15 @@
  *  - CORS with allow-list validation
  *  - Request ID propagation
  *  - Structured JSON logging via pino
+ *  - Sentry error tracking (when SENTRY_DSN is set)
+ *  - Global exception filter (hides internals in production)
+ *  - Body size limits (DoS protection)
+ *  - Request timeout (DoS protection)
  *  - Auto-migration on startup
  *  - Graceful shutdown (SIGINT, SIGTERM, uncaughtException, unhandledRejection)
- *  - Health check (already in HealthController)
+ *  - Health checks: /health/live, /health/ready, /health/startup
  *  - Production guards (JWT secret strength, SSL, etc.)
+ *  - Per-route rate limiting via @nestjs/throttler
  */
 
 import { NestFactory } from '@nestjs/core';
@@ -24,8 +29,13 @@ import { randomUUID } from 'node:crypto';
 import pino from 'pino';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import * as bodyParser from 'body-parser';
 import { AppModule } from './app.module';
 import { createVedadbPool, closeVedadbPool, getVedadbPool } from '@orbit/db';
+import { initSentry } from './common/observability/sentry';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { markStartupComplete } from './common/health/health.controller';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || (process.env.NODE_ENV === 'production' ? 'info' : 'debug'),
@@ -76,7 +86,6 @@ async function runMigrations(config: ConfigService) {
     return;
   }
   logger.info({ dir: migrationsDir }, 'running database migrations');
-  logger.info({ dir: migrationsDir }, 'running database migrations');
   const pool = getVedadbPool();
 
   // Run every .sql file in order (alphabetical)
@@ -110,6 +119,10 @@ async function bootstrap() {
     loadEnv();
   } catch {}
 
+  // Initialize Sentry as early as possible (catches bootstrap errors)
+  const sentryEnabled = initSentry();
+  if (sentryEnabled) logger.info('Sentry initialized');
+
   const configService = new ConfigService();
   preflightChecks(configService);
 
@@ -139,6 +152,15 @@ async function bootstrap() {
     app.set('trust proxy', 1);
   }
 
+  // Body size limit (DoS protection — configurable via BODY_LIMIT env)
+  // JSON bodies (most requests)
+  const bodyLimit = configService.get('BODY_LIMIT', '2mb');
+  app.use(bodyParser.json({ limit: bodyLimit }));
+  // URL-encoded forms
+  app.use(bodyParser.urlencoded({ limit: bodyLimit, extended: true }));
+  // Raw bodies (for webhooks, media uploads up to 100MB)
+  app.use(bodyParser.raw({ limit: '100mb', type: ['image/*', 'video/*', 'application/octet-stream'] }));
+
   // Security: helmet with strict defaults
   app.use(
     helmet({
@@ -167,13 +189,8 @@ async function bootstrap() {
   // Compression (gzip all responses)
   app.use(compression());
 
-  // Request ID middleware
-  app.use((req, res, next) => {
-    const reqId = (req.headers['x-request-id'] as string) || randomUUID();
-    res.setHeader('X-Request-ID', reqId);
-    (req as any).id = reqId;
-    next();
-  });
+  // Request ID middleware (for tracing across services)
+  app.use(requestIdMiddleware);
 
   // CORS
   const corsOrigins = configService.get('CORS_ORIGINS', 'http://localhost:3000').split(',').map((o: string) => o.trim());
@@ -193,9 +210,7 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  // Body size limit
-  const bodyLimit = configService.get('BODY_LIMIT', '10mb');
-  // (handled by NestJS internally; configurable per route via decorators)
+  // Body size limits already wired above (BODY_LIMIT env)
 
   // Global validation pipe
   app.useGlobalPipes(
@@ -207,7 +222,10 @@ async function bootstrap() {
     })
   );
 
-  app.setGlobalPrefix('api/v1', { exclude: ['health', 'ready', 'metrics'] });
+  // Global exception filter (hides internals in production, captures to Sentry)
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  app.setGlobalPrefix('api/v1', { exclude: ['health', 'ready', 'startup', 'live', 'metrics'] });
 
   // Swagger (disable in production unless API_DOCS_PUBLIC=true)
   if (configService.get('API_DOCS_PUBLIC', 'false') === 'true' || configService.get('NODE_ENV') !== 'production') {
@@ -236,10 +254,19 @@ async function bootstrap() {
   const port = parseInt(configService.get('API_PORT', '4000'), 10);
   await app.listen(port, '0.0.0.0');
 
+  // Mark startup complete — K8s readiness probe will now return 200
+  markStartupComplete();
+
   logger.info({ port, env: configService.get('NODE_ENV') }, `🚀 ORBIT API running on http://0.0.0.0:${port}`);
   if (configService.get('API_DOCS_PUBLIC', 'false') === 'true' || configService.get('NODE_ENV') !== 'production') {
     logger.info({ port }, `📚 API docs: http://0.0.0.0:${port}/api/docs`);
   }
+  logger.info('Health probes:');
+  logger.info('  /health/live    — K8s liveness');
+  logger.info('  /health/ready   — K8s readiness (DB check)');
+  logger.info('  /health/startup — K8s startup');
+  logger.info('  /health         — full health check');
+  logger.info('  /metrics        — Prometheus metrics');
 
   // ==========================================================================
   // Graceful shutdown
