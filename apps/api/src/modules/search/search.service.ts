@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { getVedadbPool } from '@orbit/db';
 import { EmbeddingsService } from './embeddings.service';
 import { MetricsService } from '../../common/observability/metrics.service';
@@ -7,6 +7,8 @@ export type SearchEntity = 'post' | 'reel' | 'user' | 'group' | 'marketplace' | 
 
 @Injectable()
 export class SearchService {
+  private readonly logger = new Logger(SearchService.name);
+
   constructor(
     private readonly embeddings: EmbeddingsService,
     private readonly metrics: MetricsService,
@@ -51,7 +53,7 @@ export class SearchService {
   }
 
   private async searchPosts(query: string, _userId: string | null, limit: number) {
-    console.log('[searchPosts] query:', query, 'limit:', limit);
+    this.logger.debug(`[searchPosts] query=${JSON.stringify(query)} limit=${limit}`);
     const r = await getVedadbPool().query(
       `SELECT p.post_id as id, p.content_text, p.hashtags, p.mode, p.created_at, p.author_id,
               u.handle, u.display_name,
@@ -63,7 +65,7 @@ export class SearchService {
        LIMIT $2`,
       [query, limit],
     );
-    console.log('[searchPosts] rows:', r.rowCount, r.rows?.length);
+    this.logger.debug(`[searchPosts] rowCount=${r.rowCount}`);
     return {
       query, entity: 'post' as const, results: r.rows, total: r.rowCount || 0, mode: 'text' as const,
     };
