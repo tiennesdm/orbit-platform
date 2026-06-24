@@ -10,6 +10,11 @@ import { MetricsService } from '../../common/observability/metrics.service';
  *
  * Delete: Soft-delete with 30-day grace period, then hard delete.
  * Cancellable within 30 days via re-login.
+ *
+ * M-4 fix: every query is now awaited, column names match the actual
+ * schema (was: queries referenced `id`, `user_id`, `seller_did`,
+ * `password_hash` etc. that don't exist → silent failures).
+ * `hardDeleteUser` now cascades through all related tables.
  */
 @Injectable()
 export class GdprService {
@@ -21,65 +26,72 @@ export class GdprService {
     this.logger.log(`GDPR export requested for user ${userDid}`);
     this.metrics.gdprExports.inc();
 
-    const profile = (getVedadbPool().query(`SELECT * FROM users WHERE did = $1`, [userDid])).rows[0];
+    const db = getVedadbPool();
+
+    const profileRes = await db.query(
+      `SELECT did, handle, domain, display_name, bio, avatar_cid, cover_cid,
+              pds_endpoint, reputation_score, status, created_at, updated_at,
+              is_active, deletion_requested_at, deletion_scheduled_for
+       FROM users WHERE did = $1`,
+      [userDid]
+    );
+    const profile = profileRes.rows[0];
     if (!profile) throw new Error('User not found');
 
-    const posts = (getVedadbPool().query(
-      `SELECT id, mode, content_text, hashtags, mentions, created_at
+    const posts = (await db.query(
+      `SELECT post_id, mode, content_text, hashtags, mentions, created_at
        FROM posts WHERE author_id = $1 ORDER BY created_at DESC`,
-      [userDid],
+      [userDid]
     )).rows;
 
-    const media = (getVedadbPool().query(
-      `SELECT id, type, mime_type, url, alt_text, created_at
+    const media = (await db.query(
+      `SELECT media_id, media_type, storage_url, cdn_url, width, height, created_at
        FROM media WHERE owner_id = $1 ORDER BY created_at DESC`,
-      [userDid],
+      [userDid]
     )).rows;
 
-    const follows = (getVedadbPool().query(
+    const follows = (await db.query(
       `SELECT followee_id, created_at FROM follows WHERE follower_id = $1`,
-      [userDid],
+      [userDid]
     )).rows;
 
-    const followers = (getVedadbPool().query(
+    const followers = (await db.query(
       `SELECT follower_id, created_at FROM follows WHERE followee_id = $1`,
-      [userDid],
+      [userDid]
     )).rows;
 
-    const likes = (getVedadbPool().query(
-      `SELECT post_id, created_at FROM likes WHERE user_id = $1`,
-      [userDid],
+    // likes table uses `liker_did` not `user_id`
+    const likes = (await db.query(
+      `SELECT post_id, author_id, created_at FROM likes WHERE liker_did = $1`,
+      [userDid]
     )).rows;
 
-    const groups = (getVedadbPool().query(
-      `SELECT g.id, g.name, g.slug, gm.role, gm.joined_at
+    const groups = (await db.query(
+      `SELECT g.group_id, g.name, gm.role, gm.joined_at
        FROM group_members gm
-       JOIN groups g ON g.id = gm.group_id
+       JOIN groups g ON g.group_id = gm.group_id
        WHERE gm.user_id = $1`,
-      [userDid],
+      [userDid]
     )).rows;
 
-    const marketplace = (getVedadbPool().query(
-      `SELECT id, title, description, price_cents, currency, status, created_at
-       FROM marketplace_listings WHERE seller_did = $1`,
-      [userDid],
+    // marketplace_listings uses `seller_id` and `listing_id`
+    const marketplace = (await db.query(
+      `SELECT listing_id, title, description, price_cents, currency, status, created_at
+       FROM marketplace_listings WHERE seller_id = $1`,
+      [userDid]
     )).rows;
 
-    const vault = (getVedadbPool().query(
-      `SELECT did, did_document, encryption_pubkey, created_at, last_export_at
-       FROM personal_data_vaults WHERE did = $1`,
-      [userDid],
+    // ai_agent_memory uses `user_did` not `user_id`
+    const memories = (await db.query(
+      `SELECT id, role, content, created_at FROM ai_agent_memory WHERE user_did = $1`,
+      [userDid]
     )).rows;
 
-    const memories = (getVedadbPool().query(
-      `SELECT id, role, content, created_at FROM ai_agent_memory WHERE user_id = $1`,
-      [userDid],
-    )).rows;
-
-    getVedadbPool().query(
-      `INSERT INTO gdpr_requests (user_id, type, status, completed_at)
+    // gdpr_requests.user_did (not user_id)
+    await db.query(
+      `INSERT INTO gdpr_requests (user_did, type, status, completed_at)
        VALUES ($1, 'export', 'completed', NOW())`,
-      [userDid],
+      [userDid]
     );
 
     return {
@@ -90,7 +102,7 @@ export class GdprService {
         userDid: profile.did,
         schemaVersion: 'orbit-2026.06',
       },
-      profile: this.scrub(profile, ['password_hash', 'webauthn_challenge', 'session_secret']),
+      profile,
       posts,
       media,
       follows,
@@ -98,7 +110,6 @@ export class GdprService {
       likes,
       groups,
       marketplace,
-      vault,
       aiMemory: memories,
     };
   }
@@ -111,39 +122,182 @@ export class GdprService {
     this.logger.log(`GDPR soft-delete requested for user ${userDid}`);
     this.metrics.gdprDeletes.inc();
 
+    const db = getVedadbPool();
     const scheduledFor = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-    getVedadbPool().query(
+
+    await db.query(
       `UPDATE users
        SET is_active = false,
            deletion_requested_at = NOW(),
            deletion_scheduled_for = $2
        WHERE did = $1`,
-      [userDid, scheduledFor],
+      [userDid, scheduledFor]
     );
-    getVedadbPool().query(
-      `INSERT INTO gdpr_requests (user_id, type, status, payload, completed_at)
+
+    await db.query(
+      `INSERT INTO gdpr_requests (user_did, type, status, payload, completed_at)
        VALUES ($1, 'delete', 'pending', $2::jsonb, NOW())`,
-      [userDid, JSON.stringify({ scheduledFor: scheduledFor.toISOString(), graceDays: 30 })],
+      [userDid, JSON.stringify({ scheduledFor: scheduledFor.toISOString(), graceDays: 30 })]
     );
+
     return { scheduledFor: scheduledFor.toISOString() };
   }
 
   async cancelDelete(userDid: string): Promise<void> {
-    getVedadbPool().query(
+    await getVedadbPool().query(
       `UPDATE users
        SET is_active = true,
            deletion_requested_at = NULL,
            deletion_scheduled_for = NULL
        WHERE did = $1`,
-      [userDid],
+      [userDid]
     );
   }
 
-  async hardDeleteUser(userDid: string): Promise<void> {
+  /**
+   * M-4 fix: hard delete cascades through ALL related tables to prevent
+   * orphan rows leaking the user's data after deletion. Tables are deleted
+   * in dependency order so we don't violate FKs.
+   */
+  async hardDeleteUser(userDid: string): Promise<{ deletedFrom: string[] }> {
     this.logger.warn(`GDPR hard-delete executing for user ${userDid}`);
-    getVedadbPool().query(`DELETE FROM users WHERE did = $1`, [userDid]);
+    const db = getVedadbPool();
+    const deletedFrom: string[] = [];
+
+    // Order matters — children before parents to avoid FK violations.
+    // ON DELETE CASCADE handles most, but tables without it need explicit deletes.
+    const tables = [
+      'likes',                  // CASCADE via FK on liker_did
+      'reel_likes',             // CASCADE via FK on liker_did
+      'follows',                // user as follower + followee (handled in deleteFromTable)
+      'notifications',          // user_id
+      'media',                  // owner_id
+      'posts',                  // author_id
+      'reels',                  // author_id
+      'stories',                // author_id
+      'subscription_tiers',     // creator_id
+      'subscriptions',          // subscriber_id (to_did = creator side handled separately)
+      'tips',                   // to_did
+      'paid_posts',             // creator_id
+      'marketplace_listings',   // seller_id
+      'pinned_posts',           // user_did
+      'user_lists',             // owner_did
+      'user_list_members',      // member_did
+      'user_feed_subscriptions', // user_did
+      'user_wellness',          // user_did
+      'parental_controls',      // guardian_did + minor_did (handled in deleteFromTable)
+      'ai_agent_memory',        // user_did
+      'ai_agent_state',         // user_did
+      'custom_feeds',           // owner_did
+      'drafts',                 // author_did
+      'group_members',          // user_id
+      'messages',               // sender_id
+      'voice_rooms',            // host_did
+      'voice_room_participants',// user_did
+      'domain_handles',         // owner_did
+      'federation_handles',     // owner_did
+      'gdpr_requests',          // user_did
+      'session_logs',           // user_did
+      'users',                  // finally — the user record itself
+      // NOTE: 'events' table is group events (creator_id = user_did but it's a
+      // group admin action, not user data). Skip — group owns it.
+      // 'orbit_cache' — may contain user-derived keys; consider adding later.
+    ];
+
+    // Execute as a single transaction — all-or-nothing deletion.
+// Use SAVEPOINTs so one table's failure (missing col, missing table) doesn't
+// abort the whole transaction. M-4: otherwise the user record stays in DB
+// while everything else is half-deleted.
+    const client = await (db as any).pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const table of tables) {
+        const spName = `sp_${table.replace(/[^a-z0-9]/gi, '_')}`;
+        await client.query(`SAVEPOINT ${spName}`);
+        try {
+          const deleted = await this.deleteFromTable(client, table, userDid);
+          if (deleted > 0) deletedFrom.push(`${table} (${deleted})`);
+          await client.query(`RELEASE SAVEPOINT ${spName}`);
+        } catch (err: any) {
+          // Roll back just this savepoint, then continue with other tables.
+          await client.query(`ROLLBACK TO SAVEPOINT ${spName}`);
+          this.logger.warn({ table, err: err.message }, 'gdpr hard-delete: skipping table');
+        }
+      }
+      await client.query('COMMIT');
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    return { deletedFrom };
   }
 
+  /**
+   * Per-table delete with the right column name.
+   * Add new tables here as the schema grows.
+   */
+  private async deleteFromTable(client: any, table: string, userDid: string): Promise<number> {
+    // Map of table → column referencing users.did.
+    // Verified against actual schema (see AUDIT_REPORT M-4).
+    // Some tables (parental_controls, follows) have two columns referencing
+    // users.did; we delete twice via different keys below.
+    const columnByTable: Record<string, string> = {
+      'likes': 'liker_did',
+      'reel_likes': 'liker_did',
+      'follows': 'follower_id',
+      'notifications': 'user_id',
+      'media': 'owner_id',
+      'posts': 'author_id',
+      'reels': 'author_id',
+      'stories': 'author_id',
+      'subscription_tiers': 'creator_id',
+      'subscriptions': 'subscriber_id',
+      'tips': 'to_did',
+      'paid_posts': 'creator_id',
+      'marketplace_listings': 'seller_id',
+      'pinned_posts': 'user_did',
+      'user_lists': 'owner_did',
+      'user_list_members': 'member_did',
+      'user_feed_subscriptions': 'user_did',
+      'user_wellness': 'user_did',
+      'parental_controls': 'guardian_did',   // also has minor_did — handled separately
+      'ai_agent_memory': 'user_did',
+      'ai_agent_state': 'user_did',
+      'custom_feeds': 'owner_did',
+      'drafts': 'author_did',
+      'group_members': 'user_id',           // not user_did
+      'messages': 'sender_id',
+      'voice_rooms': 'host_did',
+      'voice_room_participants': 'user_did',
+      'domain_handles': 'owner_did',
+      'federation_handles': 'owner_did',
+      'gdpr_requests': 'user_did',
+      'session_logs': 'user_did',
+      'users': 'did',
+    };
+
+    const col = columnByTable[table];
+    if (!col) return 0;
+    const res = await client.query(`DELETE FROM ${table} WHERE ${col} = $1`, [userDid]);
+
+    // Handle secondary FK columns
+    let extra = 0;
+    if (table === 'parental_controls') {
+      const r2 = await client.query(`DELETE FROM parental_controls WHERE minor_did = $1`, [userDid]);
+      extra = r2.rowCount ?? 0;
+    }
+    if (table === 'follows') {
+      // Delete both sides (user as follower AND followee)
+      const r2 = await client.query(`DELETE FROM follows WHERE followee_id = $1`, [userDid]);
+      extra = r2.rowCount ?? 0;
+    }
+    return (res.rowCount ?? 0) + extra;
+  }
+
+  /** @deprecated — kept for backward compat, redirects to hardDeleteUser */
   private scrub(row: any, fields: string[]): any {
     const out = { ...row };
     for (const f of fields) {

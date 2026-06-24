@@ -7,6 +7,7 @@
 
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post as HttpPost, Put, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { z } from 'zod';
 import { IdentityService } from './identity.service';
 import { WebAuthnService } from './webauthn.service';
@@ -47,6 +48,10 @@ export class IdentityController {
   // WebAuthn Registration (Public)
   // ============================================================
   @Public()
+  // M-2: stricter throttle on auth endpoints — 5 attempts / min to prevent
+  // credential stuffing / handle enumeration. Global guard is 10/sec which is
+  // too lenient for auth.
+  @Throttle({ short: { limit: 5, ttl: 1000 }, medium: { limit: 20, ttl: 60_000 } })
   @HttpPost('register/options')
   @ApiOperation({ summary: 'Generate WebAuthn registration options' })
   async registerOptions(@Body() body: { handle?: string; displayName: string }) {
@@ -54,6 +59,7 @@ export class IdentityController {
   }
 
   @Public()
+  @Throttle({ short: { limit: 5, ttl: 1000 }, medium: { limit: 20, ttl: 60_000 } })
   @HttpPost('register/verify')
   @ApiOperation({ summary: 'Verify WebAuthn registration and create account' })
   async registerVerify(@Body() body: { challengeId: string; credential: WebAuthnRegistrationCredential }) {
@@ -65,6 +71,7 @@ export class IdentityController {
   // WebAuthn Login (Public)
   // ============================================================
   @Public()
+  @Throttle({ short: { limit: 5, ttl: 1000 }, medium: { limit: 20, ttl: 60_000 } })
   @HttpPost('login/options')
   @ApiOperation({ summary: 'Generate WebAuthn authentication options' })
   async loginOptions(@Body() body: { handle: string }) {
@@ -72,6 +79,7 @@ export class IdentityController {
   }
 
   @Public()
+  @Throttle({ short: { limit: 5, ttl: 1000 }, medium: { limit: 20, ttl: 60_000 } })
   @HttpPost('login/verify')
   @ApiOperation({ summary: 'Verify WebAuthn authentication, return session' })
   async loginVerify(@Body() body: { challengeId: string; credential: any }) {
@@ -82,6 +90,7 @@ export class IdentityController {
   // Standard signup (for tests/dev — production uses WebAuthn)
   // ============================================================
   @Public()
+  @Throttle({ short: { limit: 3, ttl: 1000 }, medium: { limit: 10, ttl: 60_000 } })
   @HttpPost('signup')
   @ApiOperation({ summary: 'Direct signup (no WebAuthn) — for testing only' })
   async signup(@Body() body: z.infer<typeof RegisterInputSchema>): Promise<AuthSession> {

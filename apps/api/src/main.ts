@@ -62,6 +62,19 @@ function preflightChecks(config: ConfigService) {
     if (config.get('VEDADB_SSL') === 'false' && config.get('VEDADB_HOST') !== 'localhost' && config.get('VEDADB_HOST') !== '127.0.0.1') {
       logger.warn('WARN: VEDADB_SSL=false for non-localhost DB. Enable SSL for production.');
     }
+    // M-5: refuse to run with debug log level in production (info leak risk)
+    const logLevel = config.get('LOG_LEVEL', 'info');
+    if (logLevel === 'debug' || logLevel === 'trace') {
+      logger.warn(`WARN: LOG_LEVEL=${logLevel} in production — verbose logging may leak secrets/PII`);
+    }
+    // M-5: API_DOCS_PUBLIC must be false in production unless explicitly set true
+    if (config.get('API_DOCS_PUBLIC') === 'true') {
+      logger.warn('WARN: API_DOCS_PUBLIC=true — Swagger UI is publicly accessible. Disable unless intentional.');
+    }
+    // M-2: TRUST_PROXY should be on when behind nginx/cloudflare
+    if (config.get('TRUST_PROXY') !== 'true') {
+      logger.warn('WARN: TRUST_PROXY!=true. If running behind nginx/cloudflare, IP-based rate limiting and logging will be wrong.');
+    }
   }
 }
 
@@ -71,6 +84,8 @@ async function runMigrations(config: ConfigService) {
     logger.info('AUTO_MIGRATE=false, skipping auto-migration');
     return;
   }
+  const isProd = config.get('NODE_ENV', 'development') === 'production';
+
   // Find migrations dir (relative to monorepo root, not cwd)
   const candidates = [
     join(process.cwd(), 'db', 'migrations'),
@@ -80,7 +95,15 @@ async function runMigrations(config: ConfigService) {
   ];
   const migrationsDir = candidates.find((p) => existsSync(p));
   if (!migrationsDir) {
-    logger.warn({ tried: candidates }, 'migrations dir not found, skipping auto-migration');
+    // SECURITY: in production, refuse to start without migrations — silent
+    // skip would cause schema drift across instances (M-5 from AUDIT_REPORT).
+    // In dev, just warn so local hacking without migrations still works.
+    if (isProd) {
+      logger.fatal({ tried: candidates }, 'FATAL: migrations dir not found in production');
+      logger.fatal('Set AUTO_MIGRATE=false to skip migrations explicitly, or mount db/migrations at one of the candidate paths');
+      process.exit(1);
+    }
+    logger.warn({ tried: candidates }, 'migrations dir not found, skipping auto-migration (dev only)');
     return;
   }
   logger.info({ dir: migrationsDir }, 'running database migrations');

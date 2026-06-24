@@ -9,6 +9,7 @@
 
 import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
 import { HealthCheck, HealthCheckService, HealthIndicatorResult } from '@nestjs/terminus';
+import { SkipThrottle } from '@nestjs/throttler';
 import { getVedadbPool } from '@orbit/db';
 import { Public } from '../decorators/public.decorator';
 import { InjectMetric } from '@willsoto/nestjs-prometheus';
@@ -19,6 +20,8 @@ export function markStartupComplete() {
   startupComplete = true;
 }
 
+// M-2: K8s probes fire frequently — must NOT be rate-limited.
+@SkipThrottle()
 @Controller('health')
 export class HealthController {
   constructor(

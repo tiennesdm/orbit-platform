@@ -91,12 +91,18 @@ export function middleware(request: NextRequest) {
   }
 
   // ============== Rate limiting ==============
-  // Stricter limit for auth endpoints (prevent brute force)
+  // Stricter limit for auth endpoints (prevent brute force / credential stuffing).
+  // L-4: Added /forgot + /auth/recovery/* + /api/v1/auth/* which were missing.
   const isAuthRoute = url.pathname.startsWith('/login')
     || url.pathname.startsWith('/signup')
     || url.pathname.startsWith('/forgot')
+    || url.pathname.startsWith('/auth/recovery')
+    || url.pathname.startsWith('/auth/email')
+    || url.pathname.startsWith('/auth/2fa')
+    || url.pathname.startsWith('/auth/dev')
     || url.pathname.includes('/api/v1/identity/signup')
-    || url.pathname.includes('/api/v1/identity/login');
+    || url.pathname.includes('/api/v1/identity/login')
+    || url.pathname.includes('/api/v1/auth/');
 
   if (isAuthRoute) {
     const { ok, remaining, resetAt } = checkRateLimit(`auth:${ip}`, 10, 5 * 60 * 1000);
@@ -127,9 +133,13 @@ export function middleware(request: NextRequest) {
   response.headers.set('X-Request-ID', reqId);
 
   // ============== Security.txt (responsible disclosure) ==============
+  // L-5: Use env-configurable contact so deployment can set real address.
+  // Falls back to security@orbit.example for local dev only.
   if (url.pathname === '/.well-known/security.txt') {
+    const contact = process.env.SECURITY_CONTACT_EMAIL || 'security@orbit.example';
+    const expires = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
     return new NextResponse(
-      `Contact: mailto:security@orbit.example\nExpires: ${new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()}`,
+      `Contact: mailto:${contact}\nExpires: ${expires}\nPreferred-Languages: en\nCanonical: https://${request.headers.get('host') || 'orbit.example'}/.well-known/security.txt`,
       { status: 200, headers: { 'Content-Type': 'text/plain' } },
     );
   }

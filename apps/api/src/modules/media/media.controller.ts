@@ -39,7 +39,14 @@ export class MediaController {
   }
 
   @Get('local/:key')
-  @ApiOperation({ summary: 'Serve a locally-stored media file' })
+  @ApiOperation({
+    summary: 'Serve a locally-stored media file',
+    description:
+      'M-7 WARNING: local-upload stores files on the API pod filesystem. ' +
+      'In multi-replica deployments, files uploaded to pod A are NOT accessible ' +
+      'from pod B. For production, use S3-backed presign uploads instead, or ' +
+      'mount a shared PersistentVolume at /opt/orbit/uploads.',
+  })
   async local(@Param('key') key: string, @Res() res: Response) {
     const decoded = decodeURIComponent(key);
     const result = await this.media.getLocal(decoded);
