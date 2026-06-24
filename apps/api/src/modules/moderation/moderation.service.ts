@@ -51,10 +51,14 @@ export class ModerationService {
     reason: string;
     description?: string;
   }) {
+    // Map target_type enum to smallint (per schema: reports.target_type is smallint)
+    const targetTypeMap: Record<string, number> = { post: 1, user: 2, reel: 3, story: 4, message: 5 };
+    const targetTypeInt = targetTypeMap[input.targetType] ?? 0;
+    // target_id is bigint — pass as string (pg driver converts)
     await this.db.query(
       `INSERT INTO reports (reporter_id, target_type, target_id, reason, description)
        VALUES ($1, $2, $3, $4, $5)`,
-      [input.reporterId, input.targetType, input.targetId, input.reason, input.description]
+      [input.reporterId, targetTypeInt, input.targetId, input.reason, input.description]
     );
 
     // Auto-classify

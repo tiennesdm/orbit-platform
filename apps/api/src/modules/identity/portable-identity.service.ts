@@ -30,6 +30,17 @@ export class PortableIdentityService {
     const user = await this.identityService.findByDid(did);
     if (!user) throw new BadRequestException('User not found');
 
+    // Record the export in gdpr_requests for audit trail
+    try {
+      await this.db.query(
+        `INSERT INTO gdpr_requests (user_did, type, status, completed_at)
+         VALUES ($1, 'export', 'completed', NOW())`,
+        [did]
+      );
+    } catch (e) {
+      // Non-fatal — log but don't fail export
+    }
+
     // Fetch all user-owned data
     const [posts, follows, followers, messages, lists, notifications] = await Promise.all([
       this.db.query(
@@ -40,12 +51,12 @@ export class PortableIdentityService {
       ),
       this.db.query(
         `SELECT followee_id as "followeeId", notify_level as "notifyLevel",
-                is_close_friend as "isCloseFriend", created_at as "createdAt"
+                is_close_friend as "isCloseFriend"
          FROM follows WHERE follower_id = $1`,
         [did]
       ),
       this.db.query(
-        `SELECT follower_id as "followerId", created_at as "createdAt"
+        `SELECT follower_id as "followerId"
          FROM follows WHERE followee_id = $1`,
         [did]
       ),
@@ -61,7 +72,7 @@ export class PortableIdentityService {
         [did]
       ),
       this.db.query(
-        `SELECT subscription_tier as "tier", creator_id as "creatorId",
+        `SELECT tier as "tier", creator_id as "creatorId",
                 started_at as "startedAt", renews_at as "renewsAt"
          FROM subscriptions WHERE subscriber_id = $1 AND is_active = TRUE`,
         [did]

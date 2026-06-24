@@ -8,6 +8,17 @@ import * as SecureStore from 'expo-secure-store';
 import { api, AuthSession } from '@/lib/api';
 
 const TOKEN_KEY = 'orbit.auth.token';
+const isWeb = Platform.OS === 'web';
+
+const getToken = async (): Promise<string | null> => {
+  if (isWeb) {
+    try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
+  }
+  try {
+    const SecureStore = await import('expo-secure-store');
+    return SecureStore.getItemAsync(TOKEN_KEY);
+  } catch { return null; }
+};
 
 // Web fallback — SecureStore isn't available on web, use localStorage
 const isWeb = Platform.OS === 'web';
@@ -52,7 +63,7 @@ interface AuthState {
   logout: () => Promise<void>;
 }
 
-export const useAuth = create<AuthState>((set) => ({
+export const useAuth = create<AuthState>((set, get) => ({
   isHydrated: false,
   user: null,
   token: null,

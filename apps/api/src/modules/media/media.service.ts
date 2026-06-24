@@ -84,22 +84,27 @@ export class MediaService {
       altText?: string;
     },
   ): Promise<MediaMetadata> {
-    const id = uuidv4();
+    // media_id is auto-generated via sequence (bigint) — don't pass it manually
     const url = this.s3.isConfigured()
       ? `${process.env.CLOUDFRONT_URL || `https://${process.env.AWS_S3_BUCKET}.s3.${process.env.AWS_REGION}.amazonaws.com`}/${data.key}`
       : `/api/v1/media/local/${encodeURIComponent(data.key)}`;
 
-    getVedadbPool().query(
+    const res = await getVedadbPool().query<{ media_id: string }>(
       `INSERT INTO media (
-        id, owner_id, type, mime_type, bytes, url, key,
-        width, height, duration_sec, blurhash, alt_text, created_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())`,
+        owner_id, cid, media_type, mime_type, storage_url, cdn_url,
+        size_bytes,
+        width, height, duration_ms, blurhash,
+        created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+      RETURNING media_id as "mediaId"`,
       [
-        id, ownerId, data.type, data.mimeType, data.bytes, url, data.key,
-        data.width || null, data.height || null, data.durationSec || null,
-        data.blurhash || null, data.altText || null,
+        ownerId, data.key, data.type, data.mimeType, url, url,
+        data.bytes || 0,
+        data.width || null, data.height || null, (data.durationSec || 0) * 1000,
+        data.blurhash || null,
       ],
     );
+    const id = res.rows[0]?.mediaId || '0';
 
     this.metrics.mediaUploads.inc({ type: data.type });
     this.metrics.mediaUploadBytes.inc({ type: data.type }, data.bytes);

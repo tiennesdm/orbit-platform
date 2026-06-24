@@ -2,7 +2,7 @@
  * Monetization Controller — tips, subscriptions, paid posts
  */
 
-import { Body, Controller, Get, Param, Post, Delete, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Delete, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
@@ -11,19 +11,32 @@ import { MonetizationService } from './monetization.service';
 import { z } from 'zod';
 
 const TipSchema = z.object({
-  toDid: z.string(),
-  amountPaise: z.number().int().min(100).max(10_000_000),
+  // Accept either toDid (canonical) or toHandle (mobile-friendly)
+  toDid: z.string().optional(),
+  toHandle: z.string().optional(),
+  // Accept either amountPaise (canonical) or amountCents (mobile-friendly)
+  amountPaise: z.number().int().min(100).max(10_000_000).optional(),
+  amountCents: z.number().int().min(1).max(100_000).optional(),
   message: z.string().max(500).optional(),
   postId: z.string().optional(),
+}).refine((v) => v.toDid !== undefined || v.toHandle !== undefined, {
+  message: 'Either toDid or toHandle is required',
+}).refine((v) => v.amountPaise !== undefined || v.amountCents !== undefined, {
+  message: 'Either amountPaise or amountCents is required',
 });
 
 const TierSchema = z.object({
-  id: z.string().min(1).max(50),
+  id: z.string().min(1).max(50).optional(), // auto-generated UUID if omitted
   name: z.string().min(1).max(80),
   description: z.string().max(500).optional(),
-  amountPaise: z.number().int().min(100),
+  // Accept either amountPaise (canonical) or priceCents (mobile-friendly)
+  amountPaise: z.number().int().min(100).optional(),
+  priceCents: z.number().int().min(1).optional(),
   color: z.string().optional(),
   benefits: z.array(z.string()).optional(),
+  perks: z.array(z.string()).optional(), // alias for benefits
+}).refine((v) => v.amountPaise !== undefined || v.priceCents !== undefined, {
+  message: 'Either amountPaise or priceCents is required',
 });
 
 const SubscribeSchema = z.object({
@@ -49,7 +62,24 @@ export class MonetizationController {
   @Post('tips')
   @ApiOperation({ summary: 'Send a tip' })
   async sendTip(@CurrentUser('did') did: string, @Body() body: z.infer<typeof TipSchema>) {
-    return this.m.sendTip({ fromDid: did, ...body });
+    this.m['logger']?.log?.(`sendTip did=${did} body=${JSON.stringify(body)}`);
+    // Resolve toHandle → toDid if needed
+    let toDid = body.toDid;
+    if (!toDid && body.toHandle) {
+      const clean = body.toHandle.replace(/^@/, '');
+      const r = await this.m['db'].query(`SELECT did FROM users WHERE handle = $1`, [clean]);
+      toDid = r.rows[0]?.did;
+      if (!toDid) throw new BadRequestException(`User @${clean} not found`);
+    }
+    // Convert amountCents → amountPaise
+    const amountPaise = body.amountPaise ?? (body.amountCents ?? 0) * 100;
+    return this.m.sendTip({
+      fromDid: did,
+      toDid,
+      amountPaise,
+      message: body.message,
+      postId: body.postId,
+    });
   }
 
   @Public()
@@ -66,7 +96,20 @@ export class MonetizationController {
   @ApiBearerAuth()
   @Post('tiers')
   async createTier(@CurrentUser('did') did: string, @Body() body: z.infer<typeof TierSchema>) {
-    return this.m.createTier({ creatorDid: did, ...body });
+    // Map mobile-friendly fields to canonical schema:
+    //   priceCents → amountPaise (1 cent = 1 paise for now, USD-like)
+    //   perks → benefits
+    //   id → auto-generated UUID
+    const { randomUUID } = await import('crypto');
+    return this.m.createTier({
+      creatorDid: did,
+      id: body.id ?? randomUUID(),
+      name: body.name,
+      description: body.description,
+      amountPaise: body.amountPaise ?? (body.priceCents ?? 0) * 100,
+      color: body.color,
+      benefits: body.benefits ?? body.perks,
+    });
   }
 
   @Public()

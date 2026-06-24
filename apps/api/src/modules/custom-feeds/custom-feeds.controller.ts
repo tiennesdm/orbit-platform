@@ -64,8 +64,9 @@ export class CustomFeedController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Post(':id/pin')
-  async pin(@Param('id') id: string, @CurrentUser('did') did: string, @Body() body: { position: number }) {
-    await this.f.pin(id, did, body.position);
+  async pin(@Param('id') id: string, @CurrentUser('did') did: string, @Body() body: { position?: number } = {}) {
+    // Default position to 0 if not provided (pin_order is NOT NULL)
+    await this.f.pin(id, did, body?.position ?? 0);
     return { ok: true };
   }
 

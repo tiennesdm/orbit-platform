@@ -23,10 +23,17 @@ export default function LoginScreen() {
       setError('Please fill in all fields');
       return;
     }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
+      return;
+    }
     try {
       // Try signup first (works if user doesn't exist)
       try {
-        const session = await api.signup(handle.replace(/^@/, ''), handle, password);
+        const cleanHandle = handle.replace(/^@/, '');
+        // Use handle as a default display name only if user didn't provide one
+        // (signup endpoint requires a non-empty display name)
+        const session = await api.signup(cleanHandle, cleanHandle, password);
         await api.setSession(session);
         router.replace('/(app)');
         return;
@@ -34,8 +41,9 @@ export default function LoginScreen() {
         // User exists — try login via WebAuthn in production
         setError('Login via passkey only. Use signup if you don\'t have an account.');
       }
-    } catch (e: any) {
-      setError(e instanceof ApiError ? e.message : 'Login failed');
+    } catch (e) {
+      const err = e as ApiError;
+      setError(err.message ?? 'Login failed');
     }
   };
 

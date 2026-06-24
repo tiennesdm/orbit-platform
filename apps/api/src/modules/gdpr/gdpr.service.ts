@@ -21,63 +21,62 @@ export class GdprService {
     this.logger.log(`GDPR export requested for user ${userDid}`);
     this.metrics.gdprExports.inc();
 
-    const profile = (getVedadbPool().query(`SELECT * FROM users WHERE did = $1`, [userDid])).rows[0];
+    // CRITICAL: query() is async — must await before reading .rows
+    const db = getVedadbPool();
+    const profileRes = await db.query(`SELECT * FROM users WHERE did = $1`, [userDid]);
+    const profile = profileRes.rows[0];
     if (!profile) throw new Error('User not found');
 
-    const posts = (getVedadbPool().query(
-      `SELECT id, mode, content_text, hashtags, mentions, created_at
+    const postsRes = await db.query(
+      `SELECT post_id as id, mode, content_text, hashtags, mentions, created_at
        FROM posts WHERE author_id = $1 ORDER BY created_at DESC`,
       [userDid],
-    )).rows;
+    );
 
-    const media = (getVedadbPool().query(
-      `SELECT id, type, mime_type, url, alt_text, created_at
+    const mediaRes = await db.query(
+      `SELECT media_id as id, media_type as type, mime_type, cdn_url as url, created_at
        FROM media WHERE owner_id = $1 ORDER BY created_at DESC`,
       [userDid],
-    )).rows;
+    );
 
-    const follows = (getVedadbPool().query(
-      `SELECT followee_id, created_at FROM follows WHERE follower_id = $1`,
+    const followsRes = await db.query(
+      `SELECT followee_id FROM follows WHERE follower_id = $1`,
       [userDid],
-    )).rows;
+    );
 
-    const followers = (getVedadbPool().query(
-      `SELECT follower_id, created_at FROM follows WHERE followee_id = $1`,
+    const followersRes = await db.query(
+      `SELECT follower_id FROM follows WHERE followee_id = $1`,
       [userDid],
-    )).rows;
+    );
 
-    const likes = (getVedadbPool().query(
-      `SELECT post_id, created_at FROM likes WHERE user_id = $1`,
-      [userDid],
-    )).rows;
+    // NOTE: 'likes' table doesn't exist (likes are denormalized as like_count on posts)
+    // Use empty array for now
+    const likesRes = { rows: [] };
 
-    const groups = (getVedadbPool().query(
-      `SELECT g.id, g.name, g.slug, gm.role, gm.joined_at
+    const groupsRes = await db.query(
+      `SELECT g.group_id as id, g.name, g.slug, gm.role, gm.joined_at
        FROM group_members gm
-       JOIN groups g ON g.id = gm.group_id
+       JOIN groups g ON g.group_id = gm.group_id
        WHERE gm.user_id = $1`,
       [userDid],
-    )).rows;
+    );
 
-    const marketplace = (getVedadbPool().query(
-      `SELECT id, title, description, price_cents, currency, status, created_at
-       FROM marketplace_listings WHERE seller_did = $1`,
+    const marketplaceRes = await db.query(
+      `SELECT listing_id as id, title, description, price_cents, currency, created_at
+       FROM marketplace_listings WHERE seller_id = $1`,
       [userDid],
-    )).rows;
+    );
 
-    const vault = (getVedadbPool().query(
-      `SELECT did, did_document, encryption_pubkey, created_at, last_export_at
-       FROM personal_data_vaults WHERE did = $1`,
+    // personal_data_vaults table doesn't exist yet — return empty
+    const vaultRes = { rows: [] };
+
+    const memoriesRes = await db.query(
+      `SELECT id, role, content, created_at FROM ai_agent_memory WHERE user_did = $1`,
       [userDid],
-    )).rows;
+    );
 
-    const memories = (getVedadbPool().query(
-      `SELECT id, role, content, created_at FROM ai_agent_memory WHERE user_id = $1`,
-      [userDid],
-    )).rows;
-
-    getVedadbPool().query(
-      `INSERT INTO gdpr_requests (user_id, type, status, completed_at)
+    await db.query(
+      `INSERT INTO gdpr_requests (user_did, type, status, completed_at)
        VALUES ($1, 'export', 'completed', NOW())`,
       [userDid],
     );
@@ -91,15 +90,15 @@ export class GdprService {
         schemaVersion: 'orbit-2026.06',
       },
       profile: this.scrub(profile, ['password_hash', 'webauthn_challenge', 'session_secret']),
-      posts,
-      media,
-      follows,
-      followers,
-      likes,
-      groups,
-      marketplace,
-      vault,
-      aiMemory: memories,
+      posts: postsRes.rows,
+      media: mediaRes.rows,
+      follows: followsRes.rows,
+      followers: followersRes.rows,
+      likes: likesRes.rows,
+      groups: groupsRes.rows,
+      marketplace: marketplaceRes.rows,
+      vault: vaultRes.rows,
+      aiMemory: memoriesRes.rows,
     };
   }
 
