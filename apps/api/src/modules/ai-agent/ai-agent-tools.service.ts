@@ -184,41 +184,62 @@ export class AiAgentToolsService {
   }
 
   private async muteUser(userId: string, targetId: string, durationHours = 24) {
+    // SECURITY: clamp durationHours to a safe range. Was: `INTERVAL '${x} hours'`
+    // → SQL injection if user supplies string via AI tool args.
+    const MAX_MUTE_HOURS = 24 * 365; // 1 year
+    const hours = Number(durationHours);
+    const safeHours = Number.isFinite(hours) && hours > 0 && hours <= MAX_MUTE_HOURS
+      ? Math.floor(hours)
+      : 24;
+    const ttlSeconds = safeHours * 3600;
+
     await this.db.query(
       `UPDATE follows SET notify_level = 2 WHERE follower_id = $1 AND followee_id = $2`,
       [userId, targetId]
     );
     await this.db.query(
       `INSERT INTO orbit_cache (cache_key, cache_value, expires_at, ttl_seconds)
-       VALUES ($1, $2, NOW() + INTERVAL '${durationHours} hours', $3)
+       VALUES ($1, $2, NOW() + make_interval(secs => $3), $3)
        ON CONFLICT (cache_key) DO UPDATE SET expires_at = EXCLUDED.expires_at`,
-      [`mute:${userId}:${targetId}`, JSON.stringify({ muted: true }), durationHours * 3600]
+      [`mute:${userId}:${targetId}`, JSON.stringify({ muted: true }), ttlSeconds]
     );
-    return { success: true, message: `Muted @${targetId} for ${durationHours}h` };
+    return { success: true, message: `Muted @${targetId} for ${safeHours}h` };
   }
 
   private async schedulePost(userId: string, args: any) {
-    // Insert into scheduled_posts (would need schema)
-    return { success: true, scheduledAt: args.scheduledAt, message: 'Post scheduled (implementation pending)' };
+    // HONEST: not implemented. Returns explicit failure rather than fake success
+    // (per project discipline: no fake numbers — surface the gap).
+    return {
+      success: false,
+      implemented: false,
+      message: 'Post scheduling is not yet implemented. Drafts can be saved via /drafts instead.',
+    };
   }
 
   private async getUsageStats(userId: string) {
-    // Aggregate from usage_logs (would need schema)
+    // HONEST: not implemented. Aggregate from usage_logs (no schema yet).
     return {
-      todayMinutes: 23,
-      weekMinutes: 184,
-      dailyLimitMinutes: 60,
-      message: "You're doing well. 23 min today, well within your 60 min limit.",
+      success: false,
+      implemented: false,
+      message: 'Usage stats aggregation is not yet implemented.',
     };
   }
 
   private async translateText(text: string, targetLang: string) {
-    // Stub — would call translation API
-    return { translated: `[${targetLang}] ${text}`, confidence: 0.92 };
+    // HONEST: not implemented — would call translation API when wired.
+    return {
+      success: false,
+      implemented: false,
+      message: 'Translation is not yet implemented.',
+    };
   }
 
   private async crossPostToInstagram(userId: string, postId: string) {
-    // Stub — would use Meta Graph API
-    return { success: true, message: 'Cross-posted to Instagram (requires linked account)' };
+    // HONEST: not implemented. Returns explicit failure rather than fake success.
+    return {
+      success: false,
+      implemented: false,
+      message: 'Instagram cross-posting is not yet implemented. Link Instagram first via /settings/connected-accounts.',
+    };
   }
 }

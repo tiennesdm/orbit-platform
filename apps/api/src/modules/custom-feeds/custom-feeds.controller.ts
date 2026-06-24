@@ -2,7 +2,7 @@
  * Custom Feeds controller
  */
 
-import { Body, Controller, Get, Param, Post, Put, Delete, UseGuards, Query } from '@nestjs/common';
+import { Body, BadRequestException, Controller, Get, Param, Post, Put, Delete, UseGuards, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { Public } from '../../common/decorators/public.decorator';
@@ -10,15 +10,25 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CustomFeedService, FeedRule } from './custom-feeds.service';
 import { z } from 'zod';
 
+// SECURITY: per-rule-type value validation. Prevents SQL injection via the
+// rule engine (was: `z.any()` → `'day; DROP TABLE users; --'` accepted).
+const RuleValueByTypeSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('mode'),        value: z.union([z.string().max(40), z.array(z.string().max(40)).max(20)]) }),
+  z.object({ type: z.literal('hashtag'),     value: z.string().min(1).max(80) }),
+  z.object({ type: z.literal('author'),      value: z.string().min(3).max(60) }),
+  z.object({ type: z.literal('engagement'),  value: z.number().int().min(0).max(1_000_000) }),
+  z.object({ type: z.literal('time'),        value: z.enum(['hour', 'day', 'week']) }),
+  z.object({ type: z.literal('media'),       value: z.enum(['media', 'text', 'any']) }),
+  z.object({ type: z.literal('lang'),        value: z.string().min(2).max(8) }),
+  z.object({ type: z.literal('no_replies'),  value: z.boolean() }),
+  z.object({ type: z.literal('min_likes'),   value: z.number().int().min(0).max(1_000_000) }),
+]);
 const FeedSchema = z.object({
   name: z.string().min(1).max(60),
   description: z.string().max(300).optional(),
   emoji: z.string().max(10).optional(),
   isPublic: z.boolean().optional(),
-  rules: z.array(z.object({
-    type: z.enum(['mode', 'hashtag', 'author', 'engagement', 'time', 'media', 'lang', 'no_replies', 'min_likes']),
-    value: z.any(),
-  })),
+  rules: z.array(RuleValueByTypeSchema),
 });
 
 @ApiTags('feeds')
@@ -29,15 +39,31 @@ export class CustomFeedController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Post()
-  async create(@CurrentUser('did') did: string, @Body() body: z.infer<typeof FeedSchema>) {
-    return this.f.createFeed({ ownerDid: did, ...body });
+  async create(@CurrentUser('did') did: string, @Body() body: unknown) {
+    // SECURITY: Zod validate @Body — class-validator doesn't enforce rule.value shape.
+    // Convert ZodError → 400 BadRequest for proper API contract.
+    const parsed = FeedSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        message: 'Invalid feed payload',
+        errors: parsed.error.issues,
+      });
+    }
+    return this.f.createFeed({ ownerDid: did, ...parsed.data });
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Put(':id')
-  async update(@Param('id') id: string, @CurrentUser('did') did: string, @Body() body: Partial<z.infer<typeof FeedSchema>>) {
-    return this.f.updateFeed(id, did, body);
+  async update(@Param('id') id: string, @CurrentUser('did') did: string, @Body() body: unknown) {
+    const parsed = FeedSchema.partial().safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        message: 'Invalid feed payload',
+        errors: parsed.error.issues,
+      });
+    }
+    return this.f.updateFeed(id, did, parsed.data);
   }
 
   @UseGuards(JwtAuthGuard)

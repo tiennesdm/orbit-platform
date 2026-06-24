@@ -68,16 +68,31 @@ export class ReelService {
     );
   }
 
-  async like(reelId: string, authorId: string, userId: string): Promise<void> {
+  async like(reelId: string, authorId: string, userId: string): Promise<{ liked: boolean }> {
+    // Idempotent toggle via reel_likes table. Trigger keeps reels.like_count in sync.
+    // Fixes: fake-success increment, wrong target_type=1 (was 'post' instead of 'reel').
+    const existing = await this.db.query<{ liker_did: string }>(
+      `SELECT liker_did FROM reel_likes WHERE reel_id = $1 AND author_id = $2 AND liker_did = $3 LIMIT 1`,
+      [reelId, authorId, userId]
+    );
+    if (existing.rows.length > 0) {
+      await this.db.query(
+        `DELETE FROM reel_likes WHERE reel_id = $1 AND author_id = $2 AND liker_did = $3`,
+        [reelId, authorId, userId]
+      );
+      return { liked: false };
+    }
     await this.db.query(
-      `UPDATE reels SET like_count = like_count + 1 WHERE reel_id = $1 AND author_id = $2`,
-      [reelId, authorId]
+      `INSERT INTO reel_likes (reel_id, author_id, liker_did) VALUES ($1, $2, $3)
+       ON CONFLICT DO NOTHING`,
+      [reelId, authorId, userId]
     );
     await this.db.query(
       `INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, payload)
-       VALUES ($1, $2, 'like', 1, $3, '{}')
+       VALUES ($1, $2, 'like', 3, $3, '{}')  -- 3 = reel (was 1 = post, was a bug)
        ON CONFLICT DO NOTHING`,
       [authorId, userId, reelId]
     );
+    return { liked: true };
   }
 }

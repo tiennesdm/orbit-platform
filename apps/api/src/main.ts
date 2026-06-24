@@ -19,20 +19,18 @@
  */
 
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe, Logger as NestLogger, HttpException, HttpStatus } from '@nestjs/common';
+import { ValidationPipe, Logger as NestLogger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import compression from 'compression';
-import { randomUUID } from 'node:crypto';
 import pino from 'pino';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as bodyParser from 'body-parser';
 import { AppModule } from './app.module';
 import { createVedadbPool, closeVedadbPool, getVedadbPool } from '@orbit/db';
-import { initSentry } from './common/observability/sentry';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { markStartupComplete } from './common/health/health.controller';
@@ -89,7 +87,6 @@ async function runMigrations(config: ConfigService) {
   const pool = getVedadbPool();
 
   // Run every .sql file in order (alphabetical)
-  const { readdirSync } = await import('node:fs');
   const files = readdirSync(migrationsDir).filter((f) => f.endsWith('.sql')).sort();
   for (const f of files) {
     const sql = readFileSync(join(migrationsDir, f), 'utf-8');
@@ -119,9 +116,8 @@ async function bootstrap() {
     loadEnv();
   } catch {}
 
-  // Initialize Sentry as early as possible (catches bootstrap errors)
-  const sentryEnabled = initSentry();
-  if (sentryEnabled) logger.info('Sentry initialized');
+  // Sentry is initialized later by ObservabilityModule.onModuleInit() — that
+  // path uses the existing SentryService (single source of truth, DI-friendly).
 
   const configService = new ConfigService();
   preflightChecks(configService);
@@ -225,7 +221,11 @@ async function bootstrap() {
   // Global exception filter (hides internals in production, captures to Sentry)
   app.useGlobalFilters(new GlobalExceptionFilter());
 
-  app.setGlobalPrefix('api/v1', { exclude: ['health', 'ready', 'startup', 'live', 'metrics'] });
+  // Exclude health probes + metrics from /api/v1 prefix so K8s/prometheus can hit them directly.
+// Use regex pattern to match all sub-routes of /health/*.
+app.setGlobalPrefix('api/v1', {
+  exclude: ['health', 'health/(.*)', 'metrics'],
+});
 
   // Swagger (disable in production unless API_DOCS_PUBLIC=true)
   if (configService.get('API_DOCS_PUBLIC', 'false') === 'true' || configService.get('NODE_ENV') !== 'production') {

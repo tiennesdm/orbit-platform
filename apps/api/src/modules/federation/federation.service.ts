@@ -49,7 +49,17 @@ export class FederationService {
     if (res.rows[0]) return res.rows[0];
     // External lookup — try AT Protocol PLC
     try {
-      const r = await fetch(`${this.PLC_DIR}/_internal/resolveHandle?handle=${encodeURIComponent(h)}`);
+      // SECURITY: 5s timeout — don't let slow external API hang request thread.
+      const ac = new AbortController();
+      const timeout = setTimeout(() => ac.abort(), 5000);
+      let r: Response;
+      try {
+        r = await fetch(`${this.PLC_DIR}/_internal/resolveHandle?handle=${encodeURIComponent(h)}`, {
+          signal: ac.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       if (r.ok) {
         const data: any = await r.json();
         if (data.did) {
