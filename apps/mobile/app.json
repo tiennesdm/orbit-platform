@@ -1,0 +1,55 @@
+{
+  "expo": {
+    "name": "ORBIT",
+    "slug": "orbit",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FAF8F4"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.orbit.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "ORBIT needs camera access to take photos for posts and stories",
+        "NSPhotoLibraryUsageDescription": "ORBIT needs photo access to add images to your posts",
+        "NSMicrophoneUsageDescription": "ORBIT needs microphone access to record audio messages"
+      }
+    },
+    "android": {
+      "package": "com.orbit.mobile",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "RECORD_AUDIO",
+        "INTERNET"
+      ],
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#FAF8F4"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/icon.png"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-image-picker",
+      "expo-camera"
+    ],
+    "extra": {
+      "apiUrl": "http://127.0.0.1:4001/api/v1",
+      "router": {
+        "origin": false
+      }
+    },
+    "scheme": "orbit"
+  }
+}

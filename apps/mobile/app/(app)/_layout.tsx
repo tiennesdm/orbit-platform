@@ -1,12 +1,15 @@
 /**
  * Authenticated app layout — tab navigation
+ *
+ * Tabs: Home · Discover · Compose · Inbox · Reels (Reels opens as modal)
+ * Profile accessible from Home header
  */
 
 import { useEffect } from 'react';
 import { Redirect, Tabs } from 'expo-router';
 import { useAuth } from '@/store/auth';
 import { colors } from '@/lib/theme';
-import { Home, Search, PlusSquare, Inbox, User } from 'lucide-react-native';
+import { Home, Search, PlusSquare, Inbox, Film, User } from 'lucide-react-native';
 
 export default function AppLayout() {
   // Subscribe to each piece individually so re-renders fire on changes
@@ -29,9 +32,13 @@ export default function AppLayout() {
           backgroundColor: colors.bg.elevated,
           borderTopColor: colors.hairline,
           borderTopWidth: 0.5,
+          height: 64,
+          paddingTop: 6,
+          paddingBottom: 8,
         },
         tabBarActiveTintColor: colors.text.primary,
         tabBarInactiveTintColor: colors.text.tertiary,
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
       }}
     >
       <Tabs.Screen
@@ -42,9 +49,9 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
-        name="search"
+        name="discover"
         options={{
-          title: 'Search',
+          title: 'Discover',
           tabBarIcon: ({ color, size }) => <Search size={size} color={color} />,
         }}
       />
@@ -52,7 +59,7 @@ export default function AppLayout() {
         name="compose"
         options={{
           title: 'Post',
-          tabBarIcon: ({ color, size }) => <PlusSquare size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <PlusSquare size={size + 4} color={color} />,
         }}
       />
       <Tabs.Screen
@@ -63,11 +70,38 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="reels"
+        options={{
+          title: 'Reels',
+          tabBarIcon: ({ color, size }) => <Film size={size} color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color, size }) => <User size={size} color={color} />,
         }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="marketplace"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="groups"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="stories"
+        options={{ href: null }}
       />
     </Tabs>
   );

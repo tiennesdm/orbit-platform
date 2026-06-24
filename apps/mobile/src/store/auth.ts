@@ -4,6 +4,7 @@
 
 import { create } from 'zustand';
 import { Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { api, AuthSession } from '@/lib/api';
 
 const TOKEN_KEY = 'orbit.auth.token';
@@ -18,6 +19,40 @@ const getToken = async (): Promise<string | null> => {
     return SecureStore.getItemAsync(TOKEN_KEY);
   } catch { return null; }
 };
+
+// Web fallback — SecureStore isn't available on web, use localStorage
+const isWeb = Platform.OS === 'web';
+
+async function getItem(key: string): Promise<string | null> {
+  if (isWeb) {
+    return typeof window !== 'undefined' ? window.localStorage.getItem(key) : null;
+  }
+  try {
+    return await SecureStore.getItemAsync(key);
+  } catch {
+    return null;
+  }
+}
+
+async function setItem(key: string, value: string): Promise<void> {
+  if (isWeb) {
+    if (typeof window !== 'undefined') window.localStorage.setItem(key, value);
+    return;
+  }
+  try {
+    await SecureStore.setItemAsync(key, value);
+  } catch {}
+}
+
+async function deleteItem(key: string): Promise<void> {
+  if (isWeb) {
+    if (typeof window !== 'undefined') window.localStorage.removeItem(key);
+    return;
+  }
+  try {
+    await SecureStore.deleteItemAsync(key);
+  } catch {}
+}
 
 interface AuthState {
   isHydrated: boolean;
@@ -34,30 +69,22 @@ export const useAuth = create<AuthState>((set, get) => ({
   token: null,
 
   async hydrate() {
-    // Idempotent — don't re-hydrate if already done
-    if (get().isHydrated) return;
-    try {
-      // CRITICAL: load the in-memory token from SecureStore / localStorage first
-      // so subsequent api.* calls are authenticated.
-      await api.init();
-      const token = await getToken();
-      const user = await api.getCurrentUser();
-      set({ isHydrated: true, token: token ?? api.token ?? null, user });
-    } catch (e) {
-      // Network error or no token — treat as logged out, but mark hydrated
-      set({ isHydrated: true, token: null, user: null });
-    }
+    const token = await getItem(TOKEN_KEY);
+    const user = await api.getCurrentUser();
+    set({ isHydrated: true, token, user });
   },
 
   async signup(handle, displayName, password) {
     const session = await api.signup(handle, displayName, password);
     await api.setSession(session);
+    await setItem(TOKEN_KEY, session.accessToken);
     set({ token: session.accessToken, user: { did: session.did, handle: session.handle } });
     return session;
   },
 
   async logout() {
     await api.clearSession();
+    await deleteItem(TOKEN_KEY);
     set({ token: null, user: null });
   },
 }));
