@@ -51,17 +51,10 @@ export class ModerationService {
     reason: string;
     description?: string;
   }) {
-    // M-6: reports.target_type is smallint but TypeScript passed strings.
-    // Postgres cannot implicitly cast 'post' → smallint, so all reports
-    // were failing at runtime. Map enum → smallint explicitly.
-    const TARGET_TYPE_INT: Record<typeof input.targetType, number> = {
-      post: 1,
-      user: 2,
-      reel: 3,
-      story: 4,
-      message: 5,
-    };
-    const targetTypeInt = TARGET_TYPE_INT[input.targetType];
+    // Map target_type enum to smallint (per schema: reports.target_type is smallint)
+    const targetTypeMap: Record<string, number> = { post: 1, user: 2, reel: 3, story: 4, message: 5 };
+    const targetTypeInt = targetTypeMap[input.targetType] ?? 0;
+    // target_id is bigint — pass as string (pg driver converts)
     await this.db.query(
       `INSERT INTO reports (reporter_id, target_type, target_id, reason, description)
        VALUES ($1, $2, $3, $4, $5)`,

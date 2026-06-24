@@ -55,7 +55,8 @@ export class WellnessService {
   }
 
   async updateSettings(userDid: string, updates: Partial<WellnessSettings>): Promise<WellnessSettings> {
-    const fields: string[] = []; const values: any[] = []; let i = 1;
+    const intCols = ['daily_minutes_limit', 'weekly_minutes_limit', 'reminder_interval_min'];
+    const boolCols = ['slow_mode', 'hide_likes_count', 'hide_reposts_count', 'hide_followers_count', 'no_infinitescroll', 'show_timer'];
     const map: Record<string, string> = {
       dailyMinutesLimit: 'daily_minutes_limit', weeklyMinutesLimit: 'weekly_minutes_limit',
       slowMode: 'slow_mode', hideLikesCount: 'hide_likes_count', hideRepostsCount: 'hide_reposts_count',
@@ -63,18 +64,45 @@ export class WellnessService {
       showTimer: 'show_timer', quietHoursStart: 'quiet_hours_start', quietHoursEnd: 'quiet_hours_end',
       reminderIntervalMin: 'reminder_interval_min',
     };
-    for (const [k, v] of Object.entries(updates)) {
-      if (v !== undefined && map[k]) { fields.push(`${map[k]} = $${i++}`); values.push(v); }
+    const existing = await this.db.query(`SELECT 1 FROM user_wellness WHERE user_did = $1`, [userDid]);
+    if (!existing.rows[0]) {
+      // Insert with defaults + updates
+      const cols = ['user_did', ...Object.keys(updates).filter(k => map[k] && updates[k] !== undefined).map(k => `"${map[k]}"`)];
+      const placeholders = ['$1'];
+      const vals: any[] = [userDid];
+      let i = 2;
+      for (const [k, v] of Object.entries(updates)) {
+        if (v === undefined || !map[k]) continue;
+        const col = map[k];
+        const isInt = intCols.includes(col);
+        const isBool = boolCols.includes(col);
+        const cast = isInt ? '::int' : isBool ? '::bool' : '';
+        placeholders.push(`$${i}${cast}`);
+        vals.push(isInt && typeof v === 'string' ? parseInt(v, 10) || 0 : v);
+        i++;
+      }
+      await this.db.query(`INSERT INTO user_wellness (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`, vals);
+    } else {
+      const fields: string[] = [];
+      const values: any[] = [];
+      let i = 1;
+      for (const [k, v] of Object.entries(updates)) {
+        if (v === undefined || !map[k]) continue;
+        const col = map[k];
+        const isInt = intCols.includes(col);
+        const isBool = boolCols.includes(col);
+        const cast = isInt ? '::int' : isBool ? '::bool' : '';
+        const val = isInt && typeof v === 'string' ? parseInt(v, 10) || 0 : v;
+        fields.push(`${col} = $${i}${cast}`);
+        values.push(val);
+        i++;
+      }
+      if (fields.length > 0) {
+        fields.push(`updated_at = NOW()`);
+        values.push(userDid);
+        await this.db.query(`UPDATE user_wellness SET ${fields.join(', ')} WHERE user_did = $${i}`, values);
+      }
     }
-    if (fields.length === 0) return this.getSettings(userDid);
-    fields.push(`updated_at = NOW()`);
-    values.push(userDid);
-    await this.db.query(
-      `INSERT INTO user_wellness (user_did, ${Object.keys(updates).filter(k => map[k]).map(k => `"${map[k]}"`).join(', ')})
-       VALUES ($1, ${Object.keys(updates).filter(k => map[k]).map((_, idx) => `$${idx + 2}`).join(', ')})
-       ON CONFLICT (user_did) DO UPDATE SET ${fields.join(', ')}`,
-      [userDid, ...Object.values(updates).filter(v => v !== undefined)]
-    );
     return this.getSettings(userDid);
   }
 
@@ -159,7 +187,7 @@ export class WellnessService {
   async setParentalControls(opts: { guardianDid: string; minorDid: string; dailyMinutesLimit?: number; enabled?: boolean }) {
     await this.db.query(
       `INSERT INTO parental_controls (guardian_did, minor_did, daily_minutes_limit, enabled)
-       VALUES ($1, $2, $3, $4)
+       VALUES ($1, $2, $3::int, $4)
        ON CONFLICT (guardian_did, minor_did) DO UPDATE SET
          daily_minutes_limit = EXCLUDED.daily_minutes_limit,
          enabled = EXCLUDED.enabled`,

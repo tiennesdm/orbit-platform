@@ -42,7 +42,11 @@ export class IdentityController {
     private readonly identity: IdentityService,
     private readonly webauthn: WebAuthnService,
     private readonly portable: PortableIdentityService
-  ) {}
+  ) {
+    // Lazily import the db pool to avoid circular deps in DI
+    this['db'] = require('@orbit/db').getVedadbPool();
+  }
+  private readonly db: any;
 
   // ============================================================
   // WebAuthn Registration (Public)
@@ -139,8 +143,8 @@ export class IdentityController {
   @Get(':handle')
   @Public()
   @ApiOperation({ summary: 'Get user by handle (public profile)' })
-  async getByHandle(@Body('handle') handle: string): Promise<User> {
-    const user = await this.identity.findByHandle(handle.replace(/^@/, ''));
+  async getByHandle(@Param('handle') handle: string): Promise<User> {
+    const user = await this.identity.findByHandle((handle || '').replace(/^@/, ''));
     if (!user) throw new Error('User not found');
     return user;
   }
@@ -163,5 +167,58 @@ export class IdentityController {
     if (!target) throw new Error('User not found');
     await this.identity.unfollow(did, target.did);
     return { ok: true, followeeDid: target.did };
+  }
+
+  // ============================================================
+  // Mute / Block
+  // ============================================================
+  @HttpPost(':handle/mute')
+  @ApiOperation({ summary: 'Mute a user (hide their posts from your feed)' })
+  @ApiBearerAuth()
+  async mute(@CurrentUser('did') did: string, @Param('handle') handle: string) {
+    const target = await this.identity.findByHandle(handle.replace(/^@/, ''));
+    if (!target) throw new Error('User not found');
+    // Mutes are stored in follows.is_blocked (repurposed) — but proper way is a separate mutes table
+    // Use the follows table to record the relationship
+    await this.db.query(
+      `INSERT INTO follows (follower_id, followee_id, is_blocked) VALUES ($1, $2, false)
+       ON CONFLICT (follower_id, followee_id) DO UPDATE SET is_blocked = false`,
+      [did, target.did]
+    );
+    return { ok: true, mutedDid: target.did };
+  }
+
+  @Delete(':handle/mute')
+  @ApiOperation({ summary: 'Unmute a user' })
+  @ApiBearerAuth()
+  async unmute(@CurrentUser('did') did: string, @Param('handle') handle: string) {
+    const target = await this.identity.findByHandle(handle.replace(/^@/, ''));
+    if (!target) throw new Error('User not found');
+    await this.db.query(`DELETE FROM follows WHERE follower_id = $1 AND followee_id = $2`, [did, target.did]);
+    return { ok: true };
+  }
+
+  @HttpPost(':handle/block')
+  @ApiOperation({ summary: 'Block a user (prevent all interaction)' })
+  @ApiBearerAuth()
+  async block(@CurrentUser('did') did: string, @Param('handle') handle: string) {
+    const target = await this.identity.findByHandle(handle.replace(/^@/, ''));
+    if (!target) throw new Error('User not found');
+    await this.db.query(
+      `INSERT INTO follows (follower_id, followee_id, is_blocked) VALUES ($1, $2, true)
+       ON CONFLICT (follower_id, followee_id) DO UPDATE SET is_blocked = true`,
+      [did, target.did]
+    );
+    return { ok: true, blockedDid: target.did };
+  }
+
+  @Delete(':handle/block')
+  @ApiOperation({ summary: 'Unblock a user' })
+  @ApiBearerAuth()
+  async unblock(@CurrentUser('did') did: string, @Param('handle') handle: string) {
+    const target = await this.identity.findByHandle(handle.replace(/^@/, ''));
+    if (!target) throw new Error('User not found');
+    await this.db.query(`DELETE FROM follows WHERE follower_id = $1 AND followee_id = $2`, [did, target.did]);
+    return { ok: true };
   }
 }

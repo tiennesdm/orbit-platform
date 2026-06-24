@@ -239,4 +239,24 @@ export class PostService {
     const matches = text.match(/@[\w.-]+/g);
     return matches ? [...new Set(matches.map((m) => m.slice(1)))] : [];
   }
+
+  /**
+   * Pin a post to the author's profile.
+   * Toggles the is_pinned flag (only 1 post can be pinned at a time per user).
+   */
+  async pin(authorDid: string, postId: string): Promise<{ isPinned: boolean }> {
+    // Unpin all other posts for this author first
+    await this.db.query(
+      `UPDATE posts SET is_pinned = false WHERE author_id = $1 AND is_pinned = true`,
+      [authorDid]
+    );
+    // Pin this one
+    const res = await this.db.query<{ is_pinned: boolean }>(
+      `UPDATE posts SET is_pinned = true WHERE author_id = $1 AND post_id = $2
+       RETURNING is_pinned`,
+      [authorDid, postId]
+    );
+    if (!res.rows[0]) throw new Error('Post not found or not owned by user');
+    return { isPinned: res.rows[0].is_pinned };
+  }
 }

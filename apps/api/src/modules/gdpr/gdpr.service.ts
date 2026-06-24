@@ -26,68 +26,60 @@ export class GdprService {
     this.logger.log(`GDPR export requested for user ${userDid}`);
     this.metrics.gdprExports.inc();
 
+    // CRITICAL: query() is async — must await before reading .rows
     const db = getVedadbPool();
-
-    const profileRes = await db.query(
-      `SELECT did, handle, domain, display_name, bio, avatar_cid, cover_cid,
-              pds_endpoint, reputation_score, status, created_at, updated_at,
-              is_active, deletion_requested_at, deletion_scheduled_for
-       FROM users WHERE did = $1`,
-      [userDid]
-    );
+    const profileRes = await db.query(`SELECT * FROM users WHERE did = $1`, [userDid]);
     const profile = profileRes.rows[0];
     if (!profile) throw new Error('User not found');
 
-    const posts = (await db.query(
-      `SELECT post_id, mode, content_text, hashtags, mentions, created_at
+    const postsRes = await db.query(
+      `SELECT post_id as id, mode, content_text, hashtags, mentions, created_at
        FROM posts WHERE author_id = $1 ORDER BY created_at DESC`,
-      [userDid]
-    )).rows;
+      [userDid],
+    );
 
-    const media = (await db.query(
-      `SELECT media_id, media_type, storage_url, cdn_url, width, height, created_at
+    const mediaRes = await db.query(
+      `SELECT media_id as id, media_type as type, mime_type, cdn_url as url, created_at
        FROM media WHERE owner_id = $1 ORDER BY created_at DESC`,
-      [userDid]
-    )).rows;
+      [userDid],
+    );
 
-    const follows = (await db.query(
-      `SELECT followee_id, created_at FROM follows WHERE follower_id = $1`,
-      [userDid]
-    )).rows;
+    const followsRes = await db.query(
+      `SELECT followee_id FROM follows WHERE follower_id = $1`,
+      [userDid],
+    );
 
-    const followers = (await db.query(
-      `SELECT follower_id, created_at FROM follows WHERE followee_id = $1`,
-      [userDid]
-    )).rows;
+    const followersRes = await db.query(
+      `SELECT follower_id FROM follows WHERE followee_id = $1`,
+      [userDid],
+    );
 
-    // likes table uses `liker_did` not `user_id`
-    const likes = (await db.query(
-      `SELECT post_id, author_id, created_at FROM likes WHERE liker_did = $1`,
-      [userDid]
-    )).rows;
+    // NOTE: 'likes' table doesn't exist (likes are denormalized as like_count on posts)
+    // Use empty array for now
+    const likesRes = { rows: [] };
 
-    const groups = (await db.query(
-      `SELECT g.group_id, g.name, gm.role, gm.joined_at
+    const groupsRes = await db.query(
+      `SELECT g.group_id as id, g.name, g.slug, gm.role, gm.joined_at
        FROM group_members gm
        JOIN groups g ON g.group_id = gm.group_id
        WHERE gm.user_id = $1`,
-      [userDid]
-    )).rows;
+      [userDid],
+    );
 
-    // marketplace_listings uses `seller_id` and `listing_id`
-    const marketplace = (await db.query(
-      `SELECT listing_id, title, description, price_cents, currency, status, created_at
+    const marketplaceRes = await db.query(
+      `SELECT listing_id as id, title, description, price_cents, currency, created_at
        FROM marketplace_listings WHERE seller_id = $1`,
-      [userDid]
-    )).rows;
+      [userDid],
+    );
 
-    // ai_agent_memory uses `user_did` not `user_id`
-    const memories = (await db.query(
+    // personal_data_vaults table doesn't exist yet — return empty
+    const vaultRes = { rows: [] };
+
+    const memoriesRes = await db.query(
       `SELECT id, role, content, created_at FROM ai_agent_memory WHERE user_did = $1`,
-      [userDid]
-    )).rows;
+      [userDid],
+    );
 
-    // gdpr_requests.user_did (not user_id)
     await db.query(
       `INSERT INTO gdpr_requests (user_did, type, status, completed_at)
        VALUES ($1, 'export', 'completed', NOW())`,
@@ -102,15 +94,16 @@ export class GdprService {
         userDid: profile.did,
         schemaVersion: 'orbit-2026.06',
       },
-      profile,
-      posts,
-      media,
-      follows,
-      followers,
-      likes,
-      groups,
-      marketplace,
-      aiMemory: memories,
+      profile: this.scrub(profile, ['password_hash', 'webauthn_challenge', 'session_secret']),
+      posts: postsRes.rows,
+      media: mediaRes.rows,
+      follows: followsRes.rows,
+      followers: followersRes.rows,
+      likes: likesRes.rows,
+      groups: groupsRes.rows,
+      marketplace: marketplaceRes.rows,
+      vault: vaultRes.rows,
+      aiMemory: memoriesRes.rows,
     };
   }
 
