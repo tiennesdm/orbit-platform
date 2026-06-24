@@ -60,18 +60,28 @@ export class EmbeddingsService {
   }
 
   private async embedWithOpenAI(text: string): Promise<number[]> {
-    const res = await fetch('https://api.openai.com/v1/embeddings', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: text,
-        model: 'text-embedding-3-small',
-        dimensions: 384,
-      }),
-    });
+    // SECURITY: 10s timeout via AbortController — slow OpenAI shouldn't hang
+    // the request thread indefinitely.
+    const ac = new AbortController();
+    const timeout = setTimeout(() => ac.abort(), 10000);
+    let res: Response;
+    try {
+      res = await fetch('https://api.openai.com/v1/embeddings', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: text,
+          model: 'text-embedding-3-small',
+          dimensions: 384,
+        }),
+        signal: ac.signal,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
     if (!res.ok) {
       throw new Error(`OpenAI embeddings API error: ${res.status}`);
     }

@@ -11,7 +11,10 @@ import Constants from 'expo-constants';
 
 const API_BASE =
   Constants.expoConfig?.extra?.apiUrl ??
-  (Platform.OS === 'android' ? 'http://10.0.2.2:4000/api/v1' : 'http://127.0.0.1:4000/api/v1');
+  // Default to IPv4 literal (127.0.0.1) — `localhost` resolves to ::1 (IPv6) first
+  // on macOS, and our server binds 0.0.0.0 (IPv4 only), causing ECONNREFUSED with
+  // no IPv4 fallback. MUST use 127.0.0.1 literal for service-to-localhost URLs.
+  (Platform.OS === 'android' ? 'http://10.0.2.2:4001/api/v1' : 'http://127.0.0.1:4001/api/v1');
 
 const TOKEN_KEY = 'orbit.auth.token';
 const REFRESH_KEY = 'orbit.auth.refresh';

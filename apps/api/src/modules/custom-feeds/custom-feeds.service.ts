@@ -132,10 +132,19 @@ export class CustomFeedService {
         case 'min_likes':
           conds.push(`p.like_count >= $${i++}`); params.push(parseInt(rule.value, 10) || 0);
           break;
-        case 'time':
-          // value = 'hour' | 'day' | 'week'
-          conds.push(`p.created_at > NOW() - INTERVAL '1 ${rule.value}'`);
+        case 'time': {
+          // SECURITY: validate against allowed enum to prevent SQL injection.
+          // Was: `INTERVAL '1 ${rule.value}'` — Zod schema was `z.any()`, attacker
+          // could submit `'day'; DROP TABLE users; --'`.
+          const timeUnit = String(rule.value);
+          const allowed = ['hour', 'day', 'week'];
+          if (!allowed.includes(timeUnit)) {
+            // Skip invalid rule rather than throwing — keeps the feed query building
+            continue;
+          }
+          conds.push(`p.created_at > NOW() - INTERVAL '1 ${timeUnit}'`);
           break;
+        }
         case 'media':
           if (rule.value === 'media') conds.push(`p.media_count > 0`);
           else if (rule.value === 'text') conds.push(`p.media_count = 0`);

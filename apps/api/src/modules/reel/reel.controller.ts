@@ -49,13 +49,12 @@ export class ReelController {
   }
 
   @HttpPost(':authorId/:reelId/like')
-  @ApiOperation({ summary: 'Like a reel' })
+  @ApiOperation({ summary: 'Toggle like on a reel (idempotent)' })
   async like(
     @CurrentUser('did') did: string,
     @Param('authorId') authorId: string,
     @Param('reelId') reelId: string
-  ): Promise<{ success: true }> {
-    await this.reels.like(reelId, authorId, did);
-    return { success: true };
+  ): Promise<{ liked: boolean }> {
+    return this.reels.like(reelId, authorId, did);
   }
 }

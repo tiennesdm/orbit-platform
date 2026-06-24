@@ -4,7 +4,7 @@
  * - Hides internal error details (stack traces, file paths, SQL) in production
  * - Returns sanitized 5xx errors with correlation ID
  * - Logs all errors with full details server-side
- * - Captures to Sentry if configured
+ * - Captures to Sentry via SentryService (if initialized)
  */
 
 import {
@@ -17,12 +17,18 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { getReqId } from '../middleware/request-id.middleware';
+import { SentryService } from '../observability/sentry.service';
 
 const isProd = process.env.NODE_ENV === 'production';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
+
+  // SentryService is provided by ObservabilityModule (global). If the module
+  // hasn't initialized yet (shouldn't happen in normal flow), this is undefined
+  // and capture is a no-op.
+  constructor(private readonly sentry?: SentryService) {}
 
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
@@ -61,9 +67,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         },
         'unhandled exception',
       );
-      // Sentry capture (if initialized)
-      if ((globalThis as any).Sentry) {
-        try { (globalThis as any).Sentry.captureException(exception); } catch {}
+      // Sentry capture via injected service
+      if (this.sentry) {
+        try {
+          this.sentry.captureException(exception, {
+            reqId,
+            method: req.method,
+            url: req.originalUrl || req.url,
+          });
+        } catch (captureErr) {
+          this.logger.warn({ err: captureErr }, 'Sentry capture failed');
+        }
       }
     } else {
       this.logger.error({ reqId, err: String(exception) }, 'unknown exception type');

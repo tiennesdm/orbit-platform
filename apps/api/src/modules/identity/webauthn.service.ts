@@ -13,10 +13,19 @@ import {
   type GenerateAuthenticationOptionsOpts,
 } from '@simplewebauthn/server';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID, webcrypto } from 'node:crypto';
 import { getVedadbPool, OrbitCache } from '@orbit/db';
 import { IdentityService } from './identity.service';
 import { MetricsService } from '../../common/observability/metrics.service';
 import type { WebAuthnRegistrationOptions, WebAuthnRegistrationCredential } from '@orbit/types';
+
+// Polyfill: @simplewebauthn/server v10 uses `globalThis.crypto` but ts-node
+// transpile-only can sometimes fail to expose it. Force-expose Node's webcrypto.
+// See: https://github.com/MasterKale/SimpleWebAuthn/issues/561
+if (typeof globalThis.crypto === 'undefined') {
+  // @ts-ignore
+  globalThis.crypto = webcrypto;
+}
 
 @Injectable()
 export class WebAuthnService {
@@ -43,11 +52,14 @@ export class WebAuthnService {
     handle?: string;
     displayName: string;
   }): Promise<{ challengeId: string; options: WebAuthnRegistrationOptions }> {
-    const challengeId = crypto.randomUUID();
-    const challenge = generateRegistrationOptions({
+    const challengeId = randomUUID();
+    // @simplewebauthn/server v10: userID must be Uint8Array (not string),
+    // AND generateRegistrationOptions is async — must be awaited.
+    const userIDBytes = new TextEncoder().encode(challengeId);
+    const challenge = await generateRegistrationOptions({
       rpName: this.rpName,
       rpID: this.rpID,
-      userID: challengeId,
+      userID: userIDBytes,
       userName: input.handle || `user_${Date.now()}`,
       userDisplayName: input.displayName,
       timeout: 60000,
@@ -65,7 +77,23 @@ export class WebAuthnService {
       { ttlSeconds: 600 }
     );
 
-    return { challengeId, options: challenge as any };
+    // Serialize the Uint8Array fields to base64url so JSON.stringify works
+    // (challenge.challenge and challenge.user.id are Uint8Array, not strings)
+    const serializedOptions = {
+      ...challenge,
+      challenge: this.uint8ToBase64Url(challenge.challenge),
+      user: {
+        ...challenge.user,
+        id: this.uint8ToBase64Url(challenge.user.id),
+      },
+    };
+
+    return { challengeId, options: serializedOptions as any };
+  }
+
+  /** Convert Uint8Array → base64url string (JSON-safe) */
+  private uint8ToBase64Url(bytes: Uint8Array): string {
+    return Buffer.from(bytes).toString('base64url');
   }
 
   /**

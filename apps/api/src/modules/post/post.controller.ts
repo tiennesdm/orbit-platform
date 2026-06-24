@@ -87,14 +87,22 @@ export class PostController {
   }
 
   @HttpPost(':authorId/:postId/like')
-  @ApiOperation({ summary: 'Like a post' })
+  @ApiOperation({ summary: 'Toggle like on a post (idempotent — like if not liked, unlike if already liked)' })
   async like(
     @CurrentUser('did') did: string,
     @Param('authorId') authorId: string,
     @Param('postId') postId: string
-  ): Promise<{ success: true }> {
-    await this.posts.like(authorId, postId, did);
-    return { success: true };
+  ): Promise<{ liked: boolean }> {
+    return this.posts.like(authorId, postId, did);
+  }
+
+  @Get('liked-by-me')
+  @ApiOperation({ summary: 'List posts the current user has liked' })
+  async likedByMe(
+    @CurrentUser('did') did: string,
+    @Query('limit') limit?: string
+  ): Promise<Array<{ postId: string; authorId: string; likedAt: Date }>> {
+    return this.posts.listLikedBy(did, limit ? Math.min(parseInt(limit, 10) || 50, 200) : 50);
   }
 
   @HttpPost(':authorId/:postId/view')

@@ -181,10 +181,11 @@ export class OrbitCache {
   }
 
   async set(key: string, value: unknown, options: CacheOptions = {}): Promise<void> {
-    const ttl = options.ttlSeconds ?? 3600;
+    // SECURITY: validate + bound TTL to prevent SQL injection and absurd values
+    const ttl = this.sanitizeTtl(options.ttlSeconds);
     await this.pool.query(
       `INSERT INTO orbit_cache (cache_key, cache_value, expires_at, ttl_seconds)
-       VALUES ($1, $2, NOW() + INTERVAL '${ttl} seconds', $3)
+       VALUES ($1, $2, NOW() + make_interval(secs => $3), $3)
        ON CONFLICT (cache_key) DO UPDATE
        SET cache_value = EXCLUDED.cache_value,
            expires_at = EXCLUDED.expires_at,
@@ -200,16 +201,33 @@ export class OrbitCache {
   }
 
   async incr(key: string, ttlSeconds = 3600): Promise<number> {
+    // SECURITY: validate + bound TTL to prevent SQL injection
+    const ttl = this.sanitizeTtl(ttlSeconds);
     const res = await this.pool.query<{ value: number }>(
       `INSERT INTO orbit_cache (cache_key, cache_value, expires_at, ttl_seconds)
-       VALUES ($1, '{"value": 0}'::jsonb, NOW() + INTERVAL '${ttlSeconds} seconds', $2)
+       VALUES ($1, '{"value": 0}'::jsonb, NOW() + make_interval(secs => $2), $2)
        ON CONFLICT (cache_key) DO UPDATE
        SET cache_value = jsonb_set(orbit_cache.cache_value, '{value}', ((orbit_cache.cache_value->>'value')::int + 1)::text::jsonb),
            updated_at = NOW()
        RETURNING (cache_value->>'value')::int AS value`,
-      [key, ttlSeconds]
+      [key, ttl]
     );
     return res.rows[0]?.value ?? 0;
+  }
+
+  /**
+   * SECURITY: TTL values must be finite integers within a sane range.
+   * Prevents SQL injection via string interpolation (CVE pattern: `INTERVAL '${x}'`).
+   * Bounds: 0 < ttl <= 30 days (2,592,000s). NULL/NaN/negative → default 3600s.
+   */
+  private sanitizeTtl(ttl: unknown): number {
+    const DEFAULT_TTL = 3600;
+    const MAX_TTL = 30 * 24 * 60 * 60; // 30 days
+    const n = Number(ttl);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > MAX_TTL) {
+      return DEFAULT_TTL;
+    }
+    return n;
   }
 }
 

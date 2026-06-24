@@ -171,18 +171,52 @@ export class PostService {
     await this.pubsub.publish(`post.deleted:${authorId}`, { postId });
   }
 
-  async like(authorId: string, postId: string, likerDid: string): Promise<void> {
-    // Insert into likes table (would need schema for this, simplified)
-    await this.db.query(
-      `UPDATE posts SET like_count = like_count + 1 WHERE author_id = $1 AND post_id = $2`,
-      [authorId, postId]
+  async like(authorId: string, postId: string, likerDid: string): Promise<{ liked: boolean }> {
+    // Idempotent toggle: insert on like, delete on unlike. Trigger keeps
+    // posts.like_count in sync. No more fake-success increment-only behavior.
+    const existing = await this.db.query<{ liker_did: string }>(
+      `SELECT liker_did FROM likes WHERE post_id = $1 AND author_id = $2 AND liker_did = $3 LIMIT 1`,
+      [postId, authorId, likerDid]
     );
-    await this.pubsub.publish(`notification.new:${authorId}`, {
-      type: 'like',
-      actorId: likerDid,
-      targetType: 'post',
-      targetId: postId,
-    });
+    if (existing.rows.length > 0) {
+      // Already liked → unlike
+      await this.db.query(
+        `DELETE FROM likes WHERE post_id = $1 AND author_id = $2 AND liker_did = $3`,
+        [postId, authorId, likerDid]
+      );
+      return { liked: false };
+    } else {
+      await this.db.query(
+        `INSERT INTO likes (post_id, author_id, liker_did) VALUES ($1, $2, $3)
+         ON CONFLICT DO NOTHING`,
+        [postId, authorId, likerDid]
+      );
+      // Notify post author
+      await this.pubsub.publish(`notification.new:${authorId}`, {
+        type: 'like',
+        actorId: likerDid,
+        targetType: 'post',
+        targetId: postId,
+      });
+      return { liked: true };
+    }
+  }
+
+  /**
+   * List posts the user has liked (for "Likes" tab on profile)
+   */
+  async listLikedBy(userDid: string, limit = 50): Promise<Array<{ postId: string; authorId: string; likedAt: Date }>> {
+    const res = await this.db.query<{ post_id: string; author_id: string; created_at: Date }>(
+      `SELECT post_id, author_id, created_at FROM likes
+       WHERE liker_did = $1
+       ORDER BY created_at DESC LIMIT $2`,
+      [userDid, limit]
+    );
+    return res.rows.map((r) => ({
+      postId: r.post_id,
+      authorId: r.author_id,
+      likedAt: r.created_at,
+    }));
   }
 
   /**

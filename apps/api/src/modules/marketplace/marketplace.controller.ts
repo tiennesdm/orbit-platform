@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Post as HttpPost, Query } from '@nestjs/common';
+import { Public } from '../../common/decorators/public.decorator';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { MarketplaceService } from './marketplace.service';
@@ -34,7 +35,8 @@ export class MarketplaceController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Search listings (full-text + geo + category)' })
+  @Public()
+  @ApiOperation({ summary: 'Search listings (public — full-text + geo + category)' })
   async search(
     @Query('q') q?: string,
     @Query('category') category?: string,
