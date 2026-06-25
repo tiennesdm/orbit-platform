@@ -51,17 +51,19 @@ import { ObservabilityModule } from './common/observability/observability.module
       {
         name: 'short',
         ttl: 1000,
-        limit: 10,
+        // THROTTLE_*_LIMIT env vars let tests raise limits without code changes.
+        // Production defaults to 10/sec — tuned per route via @Throttle.
+        limit: parseInt(process.env.THROTTLE_SHORT_LIMIT || '10', 10),
       },
       {
         name: 'medium',
         ttl: 60000,
-        limit: 100,
+        limit: parseInt(process.env.THROTTLE_MEDIUM_LIMIT || '100', 10),
       },
       {
         name: 'long',
         ttl: 3600000,
-        limit: 1000,
+        limit: parseInt(process.env.THROTTLE_LONG_LIMIT || '1000', 10),
       },
     ]),
 

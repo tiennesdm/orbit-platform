@@ -56,3 +56,9 @@ test-results/
 
 # Local dev
 .docker-volumes/
+
+# Mobile iOS build artifacts (Xcode generates these on first build)
+apps/mobile/ios/
+apps/mobile/ios/Pods/
+apps/mobile/ios/build/
+apps/mobile/.expo/

@@ -1,4 +1,4 @@
-import { Body, Controller, Post as HttpPost } from '@nestjs/common';
+import { Body, Controller, Post as HttpPost, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { z } from 'zod';
 import { ModerationService } from './moderation.service';
@@ -30,8 +30,17 @@ export class ModerationController {
   @ApiOperation({ summary: 'Report content or user' })
   async report(
     @CurrentUser('did') did: string,
-    @Body() body: z.infer<typeof ReportSchema>
+    @Body() body: unknown
   ) {
-    return this.moderation.report({ reporterId: did, ...body });
+    // M-6: Zod validation — class-validator doesn't enforce enum strictly.
+    // safeParse → 400 BadRequest with issue details, instead of 500.
+    const parsed = ReportSchema.safeParse(body);
+    if (!parsed.success) {
+      throw new BadRequestException({
+        message: 'Invalid report payload',
+        errors: parsed.error.issues,
+      });
+    }
+    return this.moderation.report({ reporterId: did, ...parsed.data });
   }
 }
