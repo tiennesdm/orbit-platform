@@ -12,14 +12,17 @@ import { z } from 'zod';
 
 // SECURITY: per-rule-type value validation. Prevents SQL injection via the
 // rule engine (was: `z.any()` → `'day; DROP TABLE users; --'` accepted).
+// All string values are also regex-restricted to safe characters to prevent
+// SQL injection even in fields where Zod's basic checks pass.
+const SafeString = z.string().regex(/^[a-zA-Z0-9_.\-/@#:]+$/, 'unsafe characters in value');
 const RuleValueByTypeSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('mode'),        value: z.union([z.string().max(40), z.array(z.string().max(40)).max(20)]) }),
-  z.object({ type: z.literal('hashtag'),     value: z.string().min(1).max(80) }),
-  z.object({ type: z.literal('author'),      value: z.string().min(3).max(60) }),
+  z.object({ type: z.literal('mode'),        value: z.union([SafeString.max(40), z.array(SafeString).max(20)]) }),
+  z.object({ type: z.literal('hashtag'),     value: SafeString.min(1).max(80) }),
+  z.object({ type: z.literal('author'),      value: SafeString.min(3).max(60) }),
   z.object({ type: z.literal('engagement'),  value: z.number().int().min(0).max(1_000_000) }),
   z.object({ type: z.literal('time'),        value: z.enum(['hour', 'day', 'week']) }),
   z.object({ type: z.literal('media'),       value: z.enum(['media', 'text', 'any']) }),
-  z.object({ type: z.literal('lang'),        value: z.string().min(2).max(8) }),
+  z.object({ type: z.literal('lang'),        value: SafeString.min(2).max(8) }),
   z.object({ type: z.literal('no_replies'),  value: z.boolean() }),
   z.object({ type: z.literal('min_likes'),   value: z.number().int().min(0).max(1_000_000) }),
 ]);
@@ -28,7 +31,7 @@ const FeedSchema = z.object({
   description: z.string().max(300).optional(),
   emoji: z.string().max(10).optional(),
   isPublic: z.boolean().optional(),
-  rules: z.array(RuleValueByTypeSchema),
+  rules: z.array(RuleValueByTypeSchema).min(1, 'rules must have at least one entry'),
 });
 
 @ApiTags('feeds')
