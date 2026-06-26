@@ -3,12 +3,17 @@
  * - Real-time fanout via Vedadb pub/sub (orbit_streams table)
  * - AI-organized (group, dedup, prioritize)
  * - Multiple channels: likes, comments, follows, mentions, AI digest
+ * - Push delivery via PushService (Expo / Web Push) — async via queue
  */
 
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Optional, Inject } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 import { getVedadbPool, OrbitPubSub } from '@orbit/db';
 import type { Notification } from '@orbit/types';
 import { NotificationsGateway } from '../../common/realtime/notifications.gateway';
+import { QUEUE_NAMES } from '../../common/queue/queue.constants';
+import type { NotificationPushJob } from '../../common/queue/notifications.processor';
 
 @Injectable()
 export class NotificationService {
@@ -18,6 +23,8 @@ export class NotificationService {
   constructor(
     // Optional — RealtimeModule may not be loaded in tests
     @Optional() private readonly gateway?: NotificationsGateway,
+    // Optional — QueueModule may not be loaded in tests
+    @Optional() @InjectQueue(QUEUE_NAMES.NOTIFICATIONS) private readonly notifQueue?: Queue<NotificationPushJob>,
   ) {
     this.pubsub = new OrbitPubSub(this.db);
   }
@@ -58,7 +65,77 @@ export class NotificationService {
       }
     }
 
+    // Async push delivery via Expo / Web Push (queue-based)
+    if (this.notifQueue) {
+      try {
+        await this.notifQueue.add(
+          'push',
+          {
+            notificationId: notif.notificationId,
+            userDid: input.userId,
+            type: input.type,
+            payload: {
+              title: this.titleForType(input.type, input.payload),
+              body: this.bodyForType(input.type, input.payload),
+              data: {
+                notificationId: notif.notificationId,
+                type: input.type,
+                targetType: input.targetType,
+                targetId: input.targetId,
+                ...((input.payload as any) || {}),
+              },
+              priority: input.aiPriority && input.aiPriority >= 80 ? 'high' : 'normal',
+            },
+          },
+          {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 5000 }, // 5s, 25s, 125s
+            removeOnComplete: { age: 3600 }, // 1h retention
+          },
+        );
+      } catch (queueErr: any) {
+        // Don't fail the notification if push queueing fails
+        // (notification is already persisted + sent via WebSocket)
+      }
+    }
+
     return notif;
+  }
+
+  /**
+   * Build push notification title from notification type.
+   */
+  private titleForType(type: string, payload?: Record<string, unknown>): string {
+    switch (type) {
+      case 'like': return 'New like';
+      case 'comment': return 'New comment';
+      case 'follow': return 'New follower';
+      case 'mention': return 'You were mentioned';
+      case 'ai': return 'AI update';
+      case 'event': return 'Event reminder';
+      case 'subscribe': return 'New subscriber';
+      case 'brand_deal': return 'New brand deal';
+      default: return 'ORBIT';
+    }
+  }
+
+  /**
+   * Build push notification body from payload.
+   */
+  private bodyForType(type: string, payload?: Record<string, unknown>): string {
+    if (payload?.text) return String(payload.text);
+    if (payload?.preview) return String(payload.preview);
+    switch (type) {
+      case 'like': return 'Someone liked your post';
+      case 'comment': return 'Someone commented on your post';
+      case 'follow': return 'Someone started following you';
+      case 'mention': return 'You were mentioned in a post';
+      case 'ai': return 'Your AI digest is ready';
+      case 'event': return 'Your event is starting soon';
+      case 'subscribe': return 'You have a new subscriber';
+      case 'brand_deal': return 'You have a new brand deal';
+      default: return 'You have a new notification';
+    }
   }
 
   async listForUser(userId: string, limit = 50, unreadOnly = false): Promise<Notification[]> {

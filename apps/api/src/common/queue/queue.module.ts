@@ -26,6 +26,7 @@ import { DailyDigestProcessor } from './daily-digest.processor';
 import { PostModule } from '../../modules/post/post.module';
 import { GdprModule } from '../../modules/gdpr/gdpr.module';
 import { EmailModule } from '../../modules/email/email.module';
+import { PushModule } from '../../modules/push/push.module';
 import { QUEUE_NAMES } from './queue.constants';
 
 const logger = new Logger('QueueModule');
@@ -88,6 +89,7 @@ const bullImports = REDIS_DISABLED
     PostModule,    // for PostService (scheduled-posts processor)
     GdprModule,    // for GdprService (gdpr-hard-delete processor)
     EmailModule,   // for EmailService (email-retry processor)
+    PushModule,    // for PushService (notifications processor)
     ...bullImports,
   ],
   providers: [
