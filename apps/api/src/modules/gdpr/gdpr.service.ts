@@ -1,4 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
+// archiver v7 (CJS) — kept v7 because v8 is ESM-only and breaks our CJS Nest setup
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const archiver = require('archiver');
 import { getVedadbPool } from '@orbit/db';
 import { MetricsService } from '../../common/observability/metrics.service';
 
@@ -295,6 +298,120 @@ export class GdprService {
       extra = r2.rowCount ?? 0;
     }
     return (res.rowCount ?? 0) + extra;
+  }
+
+  /**
+   * Export user data as a ZIP archive (in-memory, streamed).
+   *
+   * Includes:
+   *  - data.json         — full JSON export (same as legacy /gdpr/export)
+   *  - profile.json      — user profile only
+   *  - posts.json        — array of posts
+   *  - media.json        — array of media
+   *  - follows.json      — who I follow
+   *  - followers.json    — who follows me
+   *  - likes.json        — posts I liked
+   *  - groups.json       — group memberships
+   *  - marketplace.json  — my listings
+   *  - ai-memory.json    — AI agent memory
+   *  - README.txt        — what this archive is + how to use it
+   *  - MANIFEST.txt      — generation timestamp, hash, schema version
+   *
+   * Returns a Buffer. For large datasets consider streaming + S3 signed URL
+   * (out of scope here, but easy upgrade path).
+   */
+  async exportUserDataAsZip(userDid: string): Promise<Buffer> {
+    this.logger.log(`GDPR ZIP export requested for user ${userDid}`);
+    this.metrics.gdprExports.inc();
+
+    const data = await this.exportUserData(userDid);
+    const exportTime = new Date().toISOString();
+    const schemaVersion = 'orbit-2026.06';
+
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+
+      const archive = archiver('zip', { zlib: { level: 9 } });
+      const sink = new (require('stream').Writable)({
+        write(chunk: Buffer, _enc: string, cb: () => void) {
+          chunks.push(chunk);
+          cb();
+        },
+      });
+
+      archive.on('error', reject);
+      sink.on('finish', () => resolve(Buffer.concat(chunks)));
+
+      archive.pipe(sink);
+
+      // README
+      archive.append(
+        [
+          'ORBIT Data Export',
+          '====================',
+          '',
+          `User: ${userDid}`,
+          `Generated: ${exportTime}`,
+          `Schema version: ${schemaVersion}`,
+          '',
+          'This archive contains all personal data ORBIT stores about you,',
+          'per GDPR Article 15 (Right of Access) and Article 20 (Right to Data Portability).',
+          '',
+          'Files:',
+          '  data.json       — full export (one big JSON, schema below)',
+          '  profile.json    — your account profile',
+          '  posts.json      — your posts (public + private)',
+          '  media.json      — media you uploaded',
+          '  follows.json    — accounts you follow',
+          '  followers.json  — accounts following you',
+          '  likes.json      — posts you have liked',
+          '  groups.json     — group memberships',
+          '  marketplace.json — your marketplace listings',
+          '  ai-memory.json  — AI agent memory (your interactions)',
+          '',
+          'Top-level "meta" object in data.json describes the schema version.',
+          '',
+          'Questions? Contact privacy@orbit.example',
+        ].join('\n'),
+        { name: 'README.txt' }
+      );
+
+      // MANIFEST
+      archive.append(
+        [
+          'ORBIT Data Export Manifest',
+          '===========================',
+          '',
+          `user_did: ${userDid}`,
+          `generated_at: ${exportTime}`,
+          `schema_version: ${schemaVersion}`,
+          `gdpr_articles: 15, 20`,
+          `format: ZIP (DEFLATE level 9)`,
+        ].join('\n'),
+        { name: 'MANIFEST.txt' }
+      );
+
+      // Full data.json
+      archive.append(JSON.stringify(data, null, 2), { name: 'data.json' });
+
+      // Individual sections as separate JSON files
+      const sections: Record<string, string> = {
+        'profile.json': JSON.stringify(data.profile, null, 2),
+        'posts.json': JSON.stringify(data.posts, null, 2),
+        'media.json': JSON.stringify(data.media, null, 2),
+        'follows.json': JSON.stringify(data.follows, null, 2),
+        'followers.json': JSON.stringify(data.followers, null, 2),
+        'likes.json': JSON.stringify(data.likes, null, 2),
+        'groups.json': JSON.stringify(data.groups, null, 2),
+        'marketplace.json': JSON.stringify(data.marketplace, null, 2),
+        'ai-memory.json': JSON.stringify(data.aiMemory, null, 2),
+      };
+      for (const [name, content] of Object.entries(sections)) {
+        archive.append(content, { name });
+      }
+
+      archive.finalize();
+    });
   }
 
   /** @deprecated — kept for backward compat, redirects to hardDeleteUser */
