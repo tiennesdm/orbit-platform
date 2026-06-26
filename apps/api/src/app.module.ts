@@ -26,6 +26,7 @@ import { ModerationModule } from './modules/moderation/moderation.module';
 import { MediaModule } from './modules/media/media.module';
 import { GdprModule } from './modules/gdpr/gdpr.module';
 import { EmailModule } from './modules/email/email.module';
+import { OAuthModule } from './modules/oauth/oauth.module';
 import { VoiceModule } from './modules/voice/voice.module';
 import { MonetizationModule } from './modules/monetization/monetization.module';
 import { CustomFeedsModule } from './modules/custom-feeds/custom-feeds.module';
@@ -109,6 +110,7 @@ import { RealtimeModule } from './common/realtime/realtime.module';
     MediaModule,
     GdprModule,
     EmailModule,
+    OAuthModule,
     VoiceModule,
     MonetizationModule,
     CustomFeedsModule,

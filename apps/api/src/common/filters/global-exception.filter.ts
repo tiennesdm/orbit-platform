@@ -55,6 +55,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       } else {
         message = exception.message;
       }
+    } else if (this.isZodError(exception)) {
+      // Zod validation errors → 400 BadRequest with structured issues
+      status = HttpStatus.BAD_REQUEST;
+      code = 'validation_error';
+      const zodErr = exception as any;
+      message = 'Validation failed';
+      details = {
+        issues: (zodErr.issues || []).map((i: any) => ({
+          path: i.path?.join('.') || '',
+          message: i.message,
+          code: i.code,
+        })),
+      };
     } else if (exception instanceof Error) {
       // 2) Unknown error — log full details, return sanitized payload
       this.logger.error(
@@ -100,5 +113,17 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       requestId: reqId,
       timestamp: new Date().toISOString(),
     });
+  }
+
+  /**
+   * Detect ZodError without requiring `import { ZodError } from 'zod'`.
+   * Checks for the presence of `issues` array — ZodError's signature.
+   */
+  private isZodError(exception: unknown): boolean {
+    return (
+      exception instanceof Error &&
+      (exception as any).name === 'ZodError' &&
+      Array.isArray((exception as any).issues)
+    );
   }
 }

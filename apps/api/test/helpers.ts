@@ -10,6 +10,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { AppModule } from '../src/app.module';
+import { GlobalExceptionFilter } from '../src/common/filters/global-exception.filter';
 import { getVedadbPool } from '@orbit/db';
 // supertest v7+ exports default (not namespace)
 import request from 'supertest';
@@ -34,6 +35,9 @@ export async function createTestApp(): Promise<INestApplication> {
     transform: true,
     forbidNonWhitelisted: true,
   }));
+  // Register the global exception filter so ZodError → 400 and HttpException
+  // responses use the production-shaped payload (requestId, sanitized 5xx).
+  app.useGlobalFilters(new GlobalExceptionFilter());
   await app.init();
 
   // Mark startup complete so /health/ready and /health/startup return 200.

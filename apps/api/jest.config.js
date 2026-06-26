@@ -25,6 +25,11 @@ module.exports = {
   transform: {
     '^.+\\.ts$': ['ts-jest', { tsconfig: '<rootDir>/tsconfig.json', isolatedModules: true }],
   },
+  // Some OAuth dependencies (jose, used by jwks-rsa) are ESM-only.
+  // Allow ts-jest to transform them.
+  transformIgnorePatterns: [
+    '/node_modules/(?!(jose|@panva|uuid|pkcs11js)/)',
+  ],
   setupFiles: ['<rootDir>/test/setup.ts'],
   collectCoverageFrom: [
     'src/**/*.ts',
