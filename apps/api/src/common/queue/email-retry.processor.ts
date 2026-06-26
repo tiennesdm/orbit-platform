@@ -34,7 +34,10 @@ export class EmailRetryProcessor extends WorkerHost {
     this.logger.log(`[email-retry:${job.id}] attempt ${attempt} → ${to}`);
 
     try {
-      const result = await this.email.send({ to, subject, text, html, sentAt: new Date().toUTCString() });
+      // Use sendDirect — throws on failure so BullMQ can apply backoff via
+      // the `attempts` job option. We must NOT use send() here, because that
+      // would queue another retry on failure → infinite loop.
+      const result = await this.email.sendDirect({ to, subject, text, html, sentAt: new Date().toUTCString() });
       this.logger.log(`[email-retry:${job.id}] sent ${result.id}`);
       return { sent: true, id: result.id };
     } catch (err: any) {

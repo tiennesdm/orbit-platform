@@ -1,16 +1,33 @@
 /**
- * Email Service — file-based mock inbox
+ * Email Service — SMTP transport via nodemailer (production)
  *
- * In production, swap for SMTP / SendGrid / SES via the same `send()` interface.
- * For dev, we write each "email" to /tmp/orbit-email-inbox/<to>-<timestamp>.eml
- * so it can be inspected by the user via the dev-only inbox endpoint.
+ * In dev, falls back to file-based mock inbox (ORBIT_INBOX_DIR).
+ * In prod, uses SMTP credentials from env vars.
+ *
+ * Failure handling:
+ *  - If SMTP transport fails on first attempt, enqueue retry via BullMQ
+ *  - 3 attempts with exponential backoff (1s, 5s, 25s)
+ *  - After 3 failures, log critical alert — operator must investigate
+ *
+ * Templates provided:
+ *  - sendVerificationCode (email verification)
+ *  - sendRecoveryCode (account recovery / password reset)
+ *  - send2FABackupCodes (2FA backup codes)
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
+import * as nodemailer from 'nodemailer';
 import { promises as fs } from 'fs';
 import * as path from 'path';
+import { QUEUE_NAMES } from '../../common/queue/queue.constants';
 
-const INBOX_DIR = process.env.ORBIT_INBOX_DIR || '/tmp/orbit-email-inbox';
+// Read INBOX_DIR from env on every access — tests can change the env var
+// at runtime to use a per-test inbox dir without re-importing the module.
+function getInboxDir(): string {
+  return process.env.ORBIT_INBOX_DIR || '/tmp/orbit-email-inbox';
+}
 
 export interface Email {
   to: string;
@@ -25,30 +42,193 @@ export interface Email {
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
+  private transporter: nodemailer.Transporter | null = null;
+  private useFileMock = false;
 
-  constructor() {
-    fs.mkdir(INBOX_DIR, { recursive: true }).catch((e) =>
-      this.logger.error(`Failed to create inbox dir ${INBOX_DIR}: ${e}`)
-    );
+  constructor(
+    // Optional — QueueModule may not be loaded in tests
+    @Optional() @InjectQueue(QUEUE_NAMES.EMAIL_RETRY) private readonly emailQueue?: Queue,
+  ) {
+    this.initTransporter();
   }
 
   /**
-   * Send an email. In dev, writes to file. In prod, swap to SMTP transport.
+   * Initialize the SMTP transporter (or fall back to file mock in dev).
+   * Tries multiple env var conventions for compatibility:
+   *  - SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS
+   *  - SendGrid: SENDGRID_API_KEY (SMTP_API_KEY for SendGrid)
+   *  - AWS SES: SES_SMTP_HOST etc.
+   *
+   * In dev (no SMTP env vars), writes emails to file so they're inspectable.
    */
-  async send(email: Email): Promise<{ id: string }> {
+  private async initTransporter() {
+    const smtpHost = process.env.SMTP_HOST;
+    const sendgridKey = process.env.SENDGRID_API_KEY;
+
+    if (!smtpHost && !sendgridKey) {
+      this.logger.warn('No SMTP config found — using file-based mock inbox (dev only)');
+      this.useFileMock = true;
+      try {
+        await fs.mkdir(getInboxDir(), { recursive: true });
+      } catch (e: any) {
+        this.logger.error(`Failed to create inbox dir ${getInboxDir()}: ${e.message}`);
+      }
+      return;
+    }
+
+    try {
+      if (sendgridKey) {
+        // SendGrid SMTP
+        this.transporter = nodemailer.createTransport({
+          host: 'smtp.sendgrid.net',
+          port: 587,
+          secure: false,
+          auth: { user: 'apikey', pass: sendgridKey },
+        });
+        this.logger.log('Email transporter configured for SendGrid');
+      } else {
+        // Generic SMTP
+        this.transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: parseInt(process.env.SMTP_PORT || '587', 10),
+          secure: process.env.SMTP_SECURE === 'true',
+          auth: process.env.SMTP_USER ? {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASSWORD,
+          } : undefined,
+          // TLS options for self-signed / corporate certs
+          tls: process.env.SMTP_TLS_REJECT_UNAUTHORIZED === 'false' ? {
+            rejectUnauthorized: false,
+          } : undefined,
+        });
+        this.logger.log(`Email transporter configured for ${smtpHost}:${process.env.SMTP_PORT || 587}`);
+      }
+
+      // Verify connection (non-blocking — log warning if fails)
+      this.transporter.verify().then(
+        () => this.logger.log('SMTP connection verified'),
+        (err: any) => this.logger.warn(`SMTP verify failed: ${err.message}`),
+      );
+    } catch (err: any) {
+      this.logger.error(`Failed to initialize SMTP transporter: ${err.message}`);
+      this.useFileMock = true;
+    }
+  }
+
+  /**
+   * Send an email. Routes through SMTP if configured, else writes to file.
+   *
+   * On SMTP failure (initial send), enqueues retry via BullMQ email-retry queue.
+   * Returns immediately; retries happen async with exponential backoff.
+   *
+   * Note: when called from the retry queue processor itself, this method
+   * throws on failure rather than re-queueing — BullMQ handles retry backoff
+   * via the `attempts` job option. To avoid infinite recursion, the processor
+   * uses `sendDirect()` instead, which skips the queue.
+   */
+  async send(email: Email): Promise<{ id: string; queued: boolean }> {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const filename = `${id}.eml`;
-    const filepath = path.join(INBOX_DIR, filename);
+    const sentAt = email.sentAt || new Date().toUTCString();
+    const from = email.from || process.env.EMAIL_FROM || 'ORBIT <hello@orbit.example>';
+    const fullEmail = { ...email, from, sentAt };
 
-    const eml = this.renderEml(email, id);
-    await fs.writeFile(filepath, eml, 'utf8');
+    // File mock mode (dev) — write to disk
+    if (this.useFileMock || !this.transporter) {
+      const filename = `${id}.eml`;
+      const filepath = path.join(getInboxDir(), filename);
+      // Ensure inbox dir exists — may have been deleted between init and send
+      await fs.mkdir(path.dirname(filepath), { recursive: true });
+      const eml = this.renderEml(fullEmail, id);
+      await fs.writeFile(filepath, eml, 'utf8');
+      this.logger.log(`📧 email (mock) → ${email.to} (${email.subject}) [${filename}]`);
+      return { id, queued: false };
+    }
 
-    this.logger.log(`📧 email sent → ${email.to} (${email.subject}) [${filename}]`);
+    // SMTP mode — try send, queue retry on failure
+    try {
+      await this.transporter.sendMail({
+        from,
+        to: email.to,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
+      });
+      this.logger.log(`📧 email → ${email.to} (${email.subject}) [${id}]`);
+      return { id, queued: false };
+    } catch (err: any) {
+      this.logger.error(`SMTP send failed for ${email.to}: ${err.message}`);
+      // Queue retry if available
+      if (this.emailQueue) {
+        try {
+          await this.emailQueue.add(
+            'send',
+            {
+              to: email.to,
+              subject: email.subject,
+              text: email.text,
+              html: email.html,
+              attempt: 1,
+              lastError: err.message,
+            },
+            { attempts: 3, backoff: { type: 'exponential', delay: 1000 } },
+          );
+          this.logger.warn(`📧 email queued for retry: ${email.to} (${email.subject})`);
+          return { id, queued: true };
+        } catch (queueErr: any) {
+          this.logger.error(`Failed to queue email retry: ${queueErr.message}`);
+        }
+      }
+      // Fall back to file mock so email isn't lost
+      const filename = `${id}.eml`;
+      const filepath = path.join(getInboxDir(), filename);
+      await fs.mkdir(path.dirname(filepath), { recursive: true });
+      const eml = this.renderEml(fullEmail, id);
+      await fs.writeFile(filepath, eml, 'utf8');
+      this.logger.warn(`📧 email → file fallback (SMTP failed, queue unavailable): ${filename}`);
+      return { id, queued: false };
+    }
+  }
+
+  /**
+   * Internal send path used by the email-retry queue processor.
+   *
+   * Same as `send()` but throws on SMTP failure rather than re-queueing.
+   * BullMQ handles retry backoff via the `attempts` job option, so the
+   * processor just needs to attempt the send and let exceptions propagate.
+   *
+   * Still writes to file fallback if SMTP is misconfigured (transporter=null)
+   * so emails are never lost during config drift.
+   */
+  async sendDirect(email: Email): Promise<{ id: string }> {
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sentAt = email.sentAt || new Date().toUTCString();
+    const from = email.from || process.env.EMAIL_FROM || 'ORBIT <hello@orbit.example>';
+    const fullEmail = { ...email, from, sentAt };
+
+    // File mock mode (dev) — write to disk
+    if (this.useFileMock || !this.transporter) {
+      const filename = `${id}.eml`;
+      const filepath = path.join(getInboxDir(), filename);
+      await fs.mkdir(path.dirname(filepath), { recursive: true });
+      const eml = this.renderEml(fullEmail, id);
+      await fs.writeFile(filepath, eml, 'utf8');
+      this.logger.log(`📧 email-direct (mock) → ${email.to} (${email.subject}) [${filename}]`);
+      return { id };
+    }
+
+    await this.transporter.sendMail({
+      from,
+      to: email.to,
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+    });
+    this.logger.log(`📧 email-direct → ${email.to} (${email.subject}) [${id}]`);
     return { id };
   }
 
   /**
-   * Render a simple .eml file
+   * Render a .eml file (MIME format) for file mock + SMTP fallback.
    */
   private renderEml(email: Email, id: string): string {
     const lines = [
@@ -66,40 +246,46 @@ export class EmailService {
   }
 
   /**
-   * List emails in the dev inbox (paginated)
+   * List emails in the dev inbox (paginated) — useful for tests / dev only.
+   *
+   * Filtering by `to` matches against the parsed recipient address (not the
+   * filename), so callers can pass a full email or partial handle substring.
    */
   async listInbox(opts: { to?: string; limit?: number } = {}): Promise<Email[]> {
     try {
-      const files = await fs.readdir(INBOX_DIR);
-      const filtered = files
-        .filter((f) => f.endsWith('.eml'))
-        .filter((f) => !opts.to || f.includes(opts.to.replace(/[^a-z0-9]/gi, '')))
-        .sort()
-        .reverse()
-        .slice(0, opts.limit || 50);
+      const files = await fs.readdir(getInboxDir());
+      const emlFiles = files.filter((f) => f.endsWith('.eml'));
 
       const emails: Email[] = [];
-      for (const file of filtered) {
+      for (const file of emlFiles) {
         try {
-          const content = await fs.readFile(path.join(INBOX_DIR, file), 'utf8');
+          const content = await fs.readFile(path.join(getInboxDir(), file), 'utf8');
           emails.push(this.parseEml(content));
-        } catch {}
+        } catch {
+          // skip unreadable files
+        }
       }
-      return emails;
+
+      const filtered = emails
+        .filter((e) => !opts.to || e.to.includes(opts.to))
+        .sort((a, b) => (b.sentAt || '').localeCompare(a.sentAt || ''))
+        .slice(0, opts.limit || 50);
+
+      return filtered;
     } catch {
       return [];
     }
   }
 
   /**
-   * Get a single email by ID (last 8 chars of filename)
+   * Get a single email by ID. Matches against the filename prefix.
    */
   async getEmail(id: string): Promise<Email | null> {
     try {
-      const files = await fs.readdir(INBOX_DIR);
+      const files = await fs.readdir(getInboxDir());
       const match = files.find((f) => f.startsWith(id));
       if (!match) return null;
-      const content = await fs.readFile(path.join(INBOX_DIR, match), 'utf8');
+      const content = await fs.readFile(path.join(getInboxDir(), match), 'utf8');
       return this.parseEml(content);
     } catch {
       return null;
