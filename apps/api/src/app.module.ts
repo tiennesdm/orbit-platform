@@ -38,6 +38,8 @@ import { AiCocreationModule } from './modules/ai-cocreation/ai-cocreation.module
 import { HealthController } from './common/health/health.controller';
 import { JwtAuthGuard } from './common/auth/jwt-auth.guard';
 import { ObservabilityModule } from './common/observability/observability.module';
+import { QueueModule } from './common/queue/queue.module';
+import { RealtimeModule } from './common/realtime/realtime.module';
 
 @Module({
   imports: [
@@ -69,6 +71,10 @@ import { ObservabilityModule } from './common/observability/observability.module
 
     TerminusModule,
     ObservabilityModule,
+    // Job queue — BullMQ + Redis. Set REDIS_DISABLED=true in dev to skip.
+    QueueModule,
+    // Real-time WebSocket gateway for notifications
+    RealtimeModule,
 
     JwtModule.registerAsync({
       inject: [ConfigService],

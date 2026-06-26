@@ -1,9 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import type { Queue } from 'bullmq';
 // archiver v7 (CJS) — kept v7 because v8 is ESM-only and breaks our CJS Nest setup
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const archiver = require('archiver');
 import { getVedadbPool } from '@orbit/db';
 import { MetricsService } from '../../common/observability/metrics.service';
+import { QUEUE_NAMES } from '../../common/queue/queue.constants';
 
 /**
  * GDPR Service — Right to data portability and right to be forgotten.
@@ -23,7 +26,12 @@ import { MetricsService } from '../../common/observability/metrics.service';
 export class GdprService {
   private readonly logger = new Logger('GdprService');
 
-  constructor(private readonly metrics: MetricsService) {}
+  constructor(
+    private readonly metrics: MetricsService,
+    // Optional queue injection — QueueModule may not be loaded in tests.
+    // In production, the queue is always available.
+    @Optional() @InjectQueue(QUEUE_NAMES.GDPR_HARD_DELETE) private readonly hardDeleteQueue?: Queue,
+  ) {}
 
   async exportUserData(userDid: string): Promise<Record<string, any>> {
     this.logger.log(`GDPR export requested for user ${userDid}`);
@@ -142,6 +150,31 @@ export class GdprService {
        VALUES ($1, 'delete', 'pending', $2::jsonb, NOW())`,
       [userDid, JSON.stringify({ scheduledFor: scheduledFor.toISOString(), graceDays: 30 })]
     );
+
+    // Enqueue the hard-delete job 30 days from now. If user re-activates
+    // (cancelDelete), the processor checks is_active and skips — see
+    // gdpr-hard-delete.processor.ts.
+    if (this.hardDeleteQueue) {
+      try {
+        const delayMs = 30 * 24 * 60 * 60 * 1000; // 30 days
+        await this.hardDeleteQueue.add(
+          'hard-delete',
+          { userDid, scheduledFor: scheduledFor.toISOString() },
+          { delay: delayMs },
+        );
+        this.logger.log(
+          `[gdpr] hard-delete enqueued for ${userDid} (delay=${delayMs}ms)`,
+        );
+      } catch (err: any) {
+        // Don't fail the whole delete if queue isn't available — user already
+        // soft-deleted, manual cleanup can be triggered later.
+        this.logger.warn(`[gdpr] could not enqueue hard-delete job: ${err.message}`);
+      }
+    } else {
+      this.logger.warn(
+        `[gdpr] hard-delete queue not available — manual cleanup needed for ${userDid} after ${scheduledFor.toISOString()}`,
+      );
+    }
 
     return { scheduledFor: scheduledFor.toISOString() };
   }
