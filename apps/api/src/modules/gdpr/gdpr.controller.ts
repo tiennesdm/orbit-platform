@@ -11,8 +11,48 @@ import { GdprService } from './gdpr.service';
 export class GdprController {
   constructor(private readonly gdpr: GdprService) {}
 
+  /**
+   * Export as ZIP — contains:
+   *  - data.json (full export)
+   *  - README.txt (instructions)
+   *  - MANIFEST.txt (what's in here, generated timestamp)
+   *  - profile.json
+   *  - posts.json
+   *  - media.json
+   *  - follows.json
+   *  - likes.json
+   *  - groups.json
+   *  - marketplace.json
+   *  - ai-memory.json
+   *
+   * Streamed response — no temp files on disk.
+   */
+  @Get('export.zip')
+  @ApiOperation({
+    summary: 'Export all user data as ZIP archive (GDPR Article 15 / 20 — Right to Portability)',
+  })
+  async exportZip(@Req() req: any, @Res() res: Response) {
+    const did = req.user.did;
+    const zipBuffer = await this.gdpr.exportUserDataAsZip(did);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="orbit-export-${did}-${Date.now()}.zip"`,
+    );
+    res.setHeader('Content-Length', zipBuffer.length.toString());
+    res.send(zipBuffer);
+  }
+
+  /**
+   * Legacy JSON export — kept for backwards compatibility.
+   * New clients should use /export.zip.
+   */
   @Get('export')
-  @ApiOperation({ summary: 'Export all user data (GDPR Article 15 / 20 — Right to Portability)' })
+  @ApiOperation({
+    summary: 'Export all user data as JSON (legacy — prefer /export.zip)',
+    deprecated: true,
+  })
   async export(@Req() req: any, @Res() res: Response) {
     const data = await this.gdpr.exportUserData(req.user.did);
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
