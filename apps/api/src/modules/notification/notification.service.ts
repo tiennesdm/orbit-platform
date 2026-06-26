@@ -5,16 +5,20 @@
  * - Multiple channels: likes, comments, follows, mentions, AI digest
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { getVedadbPool, OrbitPubSub } from '@orbit/db';
 import type { Notification } from '@orbit/types';
+import { NotificationsGateway } from '../../common/realtime/notifications.gateway';
 
 @Injectable()
 export class NotificationService {
   private readonly db = getVedadbPool();
   private readonly pubsub: OrbitPubSub;
 
-  constructor() {
+  constructor(
+    // Optional — RealtimeModule may not be loaded in tests
+    @Optional() private readonly gateway?: NotificationsGateway,
+  ) {
     this.pubsub = new OrbitPubSub(this.db);
   }
 
@@ -31,9 +35,9 @@ export class NotificationService {
       `INSERT INTO notifications (user_id, actor_id, type, target_type, target_id, payload, ai_priority)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING notification_id as "notificationId", user_id as "userId",
-                 actor_id as "actorId", type, target_type as "targetType",
-                 target_id as "targetId", payload, is_read as "isRead",
-                 ai_priority as "aiPriority", created_at as "createdAt"`,
+                actor_id as "actorId", type, target_type as "targetType",
+                target_id as "targetId", payload, is_read as "isRead",
+                ai_priority as "aiPriority", created_at as "createdAt"`,
       [
         input.userId, input.actorId, input.type, input.targetType, input.targetId,
         JSON.stringify(input.payload || {}), input.aiPriority ?? 50,
@@ -42,8 +46,17 @@ export class NotificationService {
 
     const notif = res.rows[0];
 
-    // Real-time push via pub/sub
+    // Real-time push via pub/sub (legacy channel — still used by some clients)
     await this.pubsub.publish(`notification.new:${input.userId}`, notif);
+
+    // Real-time push via WebSocket (new — pushed to connected clients)
+    if (this.gateway) {
+      const pushed = this.gateway.pushNotification(input.userId, notif);
+      if (!pushed) {
+        // User not connected — they'll see it on next reconnect via
+        // GET /notifications. No action needed; counts as delivery on reconnect.
+      }
+    }
 
     return notif;
   }
