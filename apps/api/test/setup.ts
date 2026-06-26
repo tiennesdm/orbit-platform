@@ -52,6 +52,10 @@ process.env.THROTTLE_SHORT_LIMIT = '10000';
 process.env.THROTTLE_MEDIUM_LIMIT = '100000';
 process.env.THROTTLE_LONG_LIMIT = '1000000';
 
+// Per-route throttles that override the global — also bump them
+process.env.PUSH_REGISTER_SHORT_LIMIT = '10000';
+process.env.PUSH_REGISTER_MEDIUM_LIMIT = '100000';
+
 // Initialize DB pool early. Some services call `getVedadbPool()` in their
 // field initializers (e.g. `private readonly db = getVedadbPool()`) which
 // runs at module instantiation. Without this, those services throw during
